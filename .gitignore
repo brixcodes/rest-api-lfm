@@ -1,19 +1,19 @@
-# Fichiers Python compilés
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Dossiers virtuels
+# Virtual env
 env/
 venv/
 
-# Dossier static
+# Static files cache
 src/static/
 
-# Fichiers temporaires
+# Logs and temp files
 *.log
 *.tmp
 
-# Configs locales
-# *.env
+# Local env config
+# .env

@@ -5,6 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import time
 import os
+
+# Supposons que router est défini dans src/api/router.py
 from src.api.router import router
 from src.util.database.database import init_db, close_db
 from src.util.helper.logger import log_error, log_info

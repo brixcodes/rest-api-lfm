@@ -1,23 +1,19 @@
-FROM python:3.13.5-slim
+FROM python:3.9-slim
 
-# Création de l'utilisateur non-root pour plus de sécurité
+# Création d'un utilisateur non-root
 RUN useradd -m -u 1000 user
 USER user
+
 ENV PATH="/home/user/.local/bin:$PATH"
 
 WORKDIR /app
 
-# Copier uniquement requirements.txt d'abord pour optimiser le cache Docker
+# Copie des requirements et installation
 COPY --chown=user requirements.txt requirements.txt
-
-# Installer les dépendances sans cache pip
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-# Copier le reste du projet
-COPY --chown=user . /app
+# Copie du code source
+COPY --chown=user src ./src
 
-# Exposer le port 7860 (standard pour Hugging Face Spaces)
-EXPOSE 7860
-
-# Commande pour lancer FastAPI avec Uvicorn sur le port 7860
+# Commande pour lancer l'app FastAPI via uvicorn
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]
