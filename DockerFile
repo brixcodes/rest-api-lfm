@@ -16,6 +16,9 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # Copier le reste du projet
 COPY --chown=user . /app
 
+# Grant full permissions to the static directory for document storage
+RUN mkdir -p src/static && chmod -R 755 src/static
+
 # Exposer le port
 EXPOSE 7860
 
