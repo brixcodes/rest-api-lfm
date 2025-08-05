@@ -5,7 +5,7 @@ WORKDIR /app
 # Copier les fichiers
 COPY . /app
 
-# Installer les dépendance
+# Installer les dépendances
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Lancer FastAPI
