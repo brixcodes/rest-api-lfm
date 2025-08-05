@@ -45,6 +45,23 @@ class StatutProjetCollectifEnum(str, Enum):
     ANNULEE = "Annulée"          # La formation a été annulée (manque de participants, problème logistique…).
     ARCHIVEE = "Archivée"        # La formation est ancienne, clôturée, et stockée à des fins historiques.
     
+
+class MethodePaiementEnum(str, Enum):
+    CARTE_BANCAIRE = "CARTE_BANCAIRE"
+    MOBILE_MONEY = "MOBILE_MONEY"
+    VIREMENT_BANCAIRE = "VIREMENT_BANCAIRE"
+    ESPECES = "ESPECES"
+    PESUPAY = "PESUPAY"
+    
+class StatutPaiementEnum(str, Enum):
+    VERSEMENT_PARTIEL = "Versement partiel"  # Paiement partiel effectué
+    AUCUN_VERSEMENT = "Aucun versement"
+    TERMINE = "Terminé"
+    
+class StatutPaiemmentFraisFormationEnum(str, Enum):
+    PLANIFIEE = "Planifiée"      # Une date de début est prévue mais elle n’a pas encore commencé.
+    EN_COURS = "En cours"        # La formation est actuellement en cours.
+    TERMINEE = "Terminée"        # La formation est terminée avec succès.    
     
 class StatutEnum(str, Enum):
     PLANIFIEE = "Planifiée"      # Une date de début est prévue mais elle n’a pas encore commencé.
@@ -79,12 +96,9 @@ class EvaluationTypeEnum(str, Enum):
     PRATIQUE = "pratique"  # Exercice ou manipulation
 
 
-class RessourceTypeEnum(str, Enum):
+class FileTypeEnum(str, Enum):
     """Types de ressources pédagogiques disponibles."""
-    VIDEO = "video"
-    PDF = "pdf"
-    TEXTE = "texte"
+    DOCUMENT = "document"
     IMAGE = "image"
     AUDIO = "audio"
-    LIEN = "lien"  # Lien externe ou ressource en ligne
-    ARCHIVE = "archive"  # Zip, tar, etc.
+    VIDEO = "video"

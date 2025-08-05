@@ -1,12 +1,13 @@
 from sqlalchemy import (
     Column, Index, Integer, String, DateTime, Enum, ForeignKey, Text, Table, Boolean, Float, Date, TIMESTAMP
 )
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.util.helper.enum import (
     EvaluationTypeEnum, GenotypeTypeEnum, PermissionEnum, RessourceTypeEnum, 
     RoleEnum, SexeEnum, StatutCompteEnum, StatutEnum, StatutFormationEnum, 
-    StatutInscriptionEnum, StatutProjetCollectifEnum, StatutProjetIndividuelEnum
+    StatutInscriptionEnum, StatutPaiementEnum, StatutProjetCollectifEnum, 
+    StatutProjetIndividuelEnum, MethodePaiementEnum
 )
 from src.util.database.database import Base
 
@@ -35,7 +36,7 @@ association_projets_collectifs_membres = Table(
     comment="Associe membres aux projets collectifs."
 )
 
-# ============================================================================
+# ============================================================================    
 # ========================= GESTION DES UTILISATEURS =========================
 # ============================================================================
 
@@ -45,8 +46,8 @@ class Permission(Base):
     nom = Column(Enum(PermissionEnum), unique=True, nullable=False)
     __table_args__ = {'comment': "Permissions pour contrôle d'accès."}
 
-    roles = relationship("Role", secondary=association_roles_permissions, backref="permissions", lazy='select')
-    utilisateurs = relationship("Utilisateur", secondary=association_utilisateurs_permissions, backref="permissions", lazy='select')
+    roles = relationship("Role", secondary=association_roles_permissions, back_populates="permissions", lazy='select')
+    utilisateurs = relationship("Utilisateur", secondary=association_utilisateurs_permissions, back_populates="permissions", lazy='select')
 
 class Role(Base):
     __tablename__ = "roles"
@@ -54,7 +55,8 @@ class Role(Base):
     nom = Column(Enum(RoleEnum), unique=True, nullable=False)
     __table_args__ = {'comment': "Rôles des utilisateurs avec permissions associées."}
 
-    utilisateurs = relationship("Utilisateur", backref=backref("role", lazy='select'), lazy='select')
+    permissions = relationship("Permission", secondary=association_roles_permissions, back_populates="roles", lazy='select')
+    utilisateurs = relationship("Utilisateur", back_populates="role", lazy='select')
 
 class Utilisateur(Base):
     __tablename__ = "utilisateurs"
@@ -71,13 +73,20 @@ class Utilisateur(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     role_id = Column(Integer, ForeignKey("roles.id", ondelete="SET NULL"))
+    reset_token = Column(String(36), nullable=True)
+    reset_token_expiry = Column(DateTime(timezone=True), nullable=True)
     __table_args__ = {'comment': "Informations des utilisateurs (apprenants, formateurs, admins)."}
 
-    inscriptions = relationship("InscriptionFormation", backref=backref("utilisateur", lazy='select'), lazy='select')
-    genotypes = relationship("GenotypeIndividuel", backref=backref("utilisateur", lazy='joined'), lazy='select')
-    plans_intervention = relationship("PlanInterventionIndividualise", backref=backref("utilisateur", lazy='joined'), lazy='select')
-    actualites = relationship("Actualite", backref=backref("utilisateur", lazy='select'), lazy='select')
-    accreditations = relationship("Accreditation", backref=backref("utilisateur", lazy='select'), lazy='select')
+    role = relationship("Role", back_populates="utilisateurs", lazy='select')
+    permissions = relationship("Permission", secondary=association_utilisateurs_permissions, back_populates="utilisateurs", lazy='select')
+    inscriptions = relationship("InscriptionFormation", back_populates="utilisateur", lazy='select')
+    genotypes = relationship("GenotypeIndividuel", back_populates="utilisateur", lazy='select')
+    plans_intervention = relationship("PlanInterventionIndividualise", back_populates="utilisateur", lazy='select')
+    actualites = relationship("Actualite", back_populates="utilisateur", lazy='select')
+    accreditations = relationship("Accreditation", back_populates="utilisateur", lazy='select')
+    chefs_d_oeuvre = relationship("ChefDOeuvre", back_populates="utilisateur", lazy='select')
+    projets_collectifs = relationship("ProjetCollectif", secondary=association_projets_collectifs_membres, back_populates="membres", lazy='select')
+    resultats_evaluations = relationship("ResultatEvaluation", back_populates="utilisateur", lazy='select')
 
 # =======================================================================================
 # ========================= FORMATIONS ET CONTENUS PÉDAGOGIQUES =========================
@@ -94,12 +103,16 @@ class InscriptionFormation(Base):
     date_dernier_acces = Column(DateTime(timezone=True), onupdate=func.now())
     note_finale = Column(Float, nullable=True)
     heures_formation = Column(Float, default=0.0)
+    montant_verse = Column(Float, default=0.0, nullable=False, comment="Montant total versé pour la formation")
+    statut_paiement = Column(Enum(StatutPaiementEnum), nullable=False, default=StatutPaiementEnum.AUCUN_VERSEMENT, comment="Statut du paiement")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
         Index('idx_inscription_user_formation', 'utilisateur_id', 'formation_id'),
-        {'comment': "Suivi des inscriptions et progression des apprenants."}
+        {'comment': "Suivi des inscriptions, progression et paiements des apprenants."}
     )
-
-    formation = relationship("Formation", backref=backref("inscriptions", lazy='select'), lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="inscriptions", lazy='select')
+    formation = relationship("Formation", back_populates="inscriptions", lazy='select')
+    paiements = relationship("Paiement", back_populates="inscription", lazy='select')
 
 class Formation(Base):
     __tablename__ = "formations"
@@ -110,6 +123,7 @@ class Formation(Base):
     specialite = Column(String(255), nullable=False, index=True)
     duree_mois = Column(Integer, nullable=False, default=12)
     statut = Column(Enum(StatutFormationEnum), nullable=False, default=StatutFormationEnum.EN_ATTENTE, index=True)
+    frais = Column(Float, default=0.0, nullable=False)
     date_debut = Column(Date, nullable=False, index=True)
     date_fin = Column(Date, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -120,8 +134,10 @@ class Formation(Base):
         {'comment': "Formations avec spécialités et calendrier."}
     )
 
-    modules = relationship("Module", backref=backref("formation", lazy='select'), lazy='select')
-    projets_collectifs = relationship("ProjetCollectif", backref=backref("formation", lazy='select'), lazy='select')
+    modules = relationship("Module", back_populates="formation", lazy='select')
+    inscriptions = relationship("InscriptionFormation", back_populates="formation", lazy='select')
+    projets_collectifs = relationship("ProjetCollectif", back_populates="formation", lazy='select')
+    accreditations = relationship("Accreditation", back_populates="formation", lazy='select')
 
 class Module(Base):
     __tablename__ = "modules"
@@ -131,11 +147,13 @@ class Module(Base):
     description = Column(Text, nullable=True)
     ordre = Column(Integer, nullable=False)
     formation_id = Column(Integer, ForeignKey("formations.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = {'comment': "Unités pédagogiques d’une formation."}
 
-    ressources = relationship("Ressource", backref=backref("module", lazy='select'), lazy='select')
-    evaluations = relationship("Evaluation", backref=backref("module", lazy='select'), lazy='select')
-    chefs_d_oeuvre = relationship("ChefDOeuvre", backref=backref("module", lazy='select'), lazy='select')
+    formation = relationship("Formation", back_populates="modules", lazy='select')
+    ressources = relationship("Ressource", back_populates="module", lazy='select')
+    evaluations = relationship("Evaluation", back_populates="module", lazy='select')
+    chefs_d_oeuvre = relationship("ChefDOeuvre", back_populates="module", lazy='select')
 
 class Ressource(Base):
     __tablename__ = "ressources"
@@ -147,9 +165,27 @@ class Ressource(Base):
     description_du_lien = Column(Text, nullable=True)
     ordre = Column(Integer, nullable=False)
     module_id = Column(Integer, ForeignKey("modules.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = {'comment': "Ressources pédagogiques pour l’apprentissage."}
 
-# ============================================================================
+    module = relationship("Module", back_populates="ressources", lazy='select')
+
+class Paiement(Base):
+    __tablename__ = "paiements"
+    id = Column(Integer, primary_key=True)
+    inscription_id = Column(Integer, ForeignKey("inscriptions_formations.id"), nullable=False)
+    montant = Column(Float, nullable=False, comment="Montant du paiement")
+    date_paiement = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    methode_paiement = Column(Enum(MethodePaiementEnum), nullable=False, comment="Méthode de paiement utilisée")
+    reference_transaction = Column(String(255), nullable=True, comment="Référence de la transaction (ex: ID PesuPay)")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (
+        Index('idx_paiement_inscription', 'inscription_id'),
+        {'comment': "Historique des paiements pour chaque inscription."}
+    )
+    inscription = relationship("InscriptionFormation", back_populates="paiements", lazy='select')
+
+# ============================================================================    
 # ========================= PROJETS PÉDAGOGIQUES =============================
 # ============================================================================
 
@@ -165,12 +201,14 @@ class ChefDOeuvre(Base):
     date_soumission = Column(DateTime(timezone=True), nullable=True)
     note = Column(Float, nullable=True)
     commentaires = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
         Index('idx_chef_oeuvre_user_module', 'utilisateur_id', 'module_id'),
         {'comment': "Projets individuels des apprenants (pédagogie Mao)."}
     )
 
-    utilisateur = relationship("Utilisateur", backref=backref("chefs_d_oeuvre", lazy='select'), lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="chefs_d_oeuvre", lazy='select')
+    module = relationship("Module", back_populates="chefs_d_oeuvre", lazy='select')
 
 class ProjetCollectif(Base):
     __tablename__ = "projets_collectifs"
@@ -182,14 +220,16 @@ class ProjetCollectif(Base):
     statut = Column(Enum(StatutProjetCollectifEnum), nullable=False, default=StatutProjetCollectifEnum.EN_COURS)
     date_debut = Column(DateTime(timezone=True), nullable=False)
     date_fin = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
         Index('idx_projet_collectif_formation_statut', 'formation_id', 'statut'),
         {'comment': "Projets collaboratifs des apprenants."}
     )
 
-    membres = relationship("Utilisateur", secondary=association_projets_collectifs_membres, backref=backref("projets_collectifs", lazy='select'), lazy='select')
-
-# ============================================================================
+    formation = relationship("Formation", back_populates="projets_collectifs", lazy='select')
+    membres = relationship("Utilisateur", secondary=association_projets_collectifs_membres, back_populates="projets_collectifs", lazy='select')
+    
+# ============================================================================    
 # ========================= ÉVALUATIONS ======================================
 # ============================================================================
 
@@ -200,10 +240,12 @@ class Evaluation(Base):
     type = Column(Enum(EvaluationTypeEnum), nullable=False)
     consigne = Column(Text, nullable=True)
     module_id = Column(Integer, ForeignKey("modules.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = {'comment': "Évaluations pour tester les compétences."}
 
-    questions = relationship("Question", backref=backref("evaluation", lazy='select'), lazy='select')
-    resultats = relationship("ResultatEvaluation", backref=backref("evaluation", lazy='select'), lazy='select')
+    module = relationship("Module", back_populates="evaluations", lazy='select')
+    questions = relationship("Question", back_populates="evaluation", lazy='select')
+    resultats = relationship("ResultatEvaluation", back_populates="evaluation", lazy='select')
 
 class Question(Base):
     __tablename__ = "questions"
@@ -212,12 +254,14 @@ class Question(Base):
     contenu = Column(Text, nullable=False)
     piece_jointe = Column(String(255), nullable=True)
     evaluation_id = Column(Integer, ForeignKey("evaluations.id"), index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
         Index('idx_question_type_eval', 'type', 'evaluation_id'),
         {'comment': "Questions des évaluations."}
     )
 
-    propositions = relationship("Proposition", backref=backref("question", lazy='select'), lazy='select')
+    evaluation = relationship("Evaluation", back_populates="questions", lazy='select')
+    propositions = relationship("Proposition", back_populates="question", lazy='select')
 
 class Proposition(Base):
     __tablename__ = "propositions"
@@ -225,7 +269,10 @@ class Proposition(Base):
     texte = Column(Text, nullable=False)
     est_correcte = Column(Boolean, default=False)
     question_id = Column(Integer, ForeignKey("questions.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = {'comment': "Options de réponse pour QCM."}
+
+    question = relationship("Question", back_populates="propositions", lazy='select')
 
 class ResultatEvaluation(Base):
     __tablename__ = "resultats_evaluations"
@@ -235,15 +282,17 @@ class ResultatEvaluation(Base):
     note = Column(Float, nullable=True)
     date_soumission = Column(DateTime(timezone=True), nullable=True)
     commentaires = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
         Index('idx_resultat_user_eval', 'utilisateur_id', 'evaluation_id'),
         Index('idx_resultat_date_note', 'date_soumission', 'note'),
         {'comment': "Performances des apprenants aux évaluations."}
     )
 
-    utilisateur = relationship("Utilisateur", backref=backref("resultats_evaluations", lazy='select'), lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="resultats_evaluations", lazy='select')
+    evaluation = relationship("Evaluation", back_populates="resultats", lazy='select')
 
-# ============================================================================
+# ============================================================================    
 # ========================= DONNÉES DU GÉNOTYPE INDIVIDUEL ===================
 # ============================================================================
 
@@ -263,16 +312,18 @@ class GenotypeIndividuel(Base):
     maison_detention = Column(String(255), nullable=True, index=True)
     profession = Column(String(255), nullable=True)
     activite_avant_detention = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
         Index('idx_genotype_nom_prenom', 'nom', 'prenom'),
         Index('idx_genotype_detention', 'type', 'maison_detention', 'date_debut_detention'),
         {'comment': "Données des détenus ou proches pour le génotype individuel."}
     )
 
-    ascendance = relationship("AscendanceGenotype", backref=backref("genotype", lazy='select'), uselist=False, lazy='select')
-    sante = relationship("SanteGenotype", backref=backref("genotype", lazy='select'), uselist=False, lazy='select')
-    education = relationship("EducationGenotype", backref=backref("genotype", lazy='select'), uselist=False, lazy='select')
-    plans_intervention = relationship("PlanInterventionIndividualise", backref=backref("genotype", lazy='joined'), lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="genotypes", lazy='select')
+    ascendance = relationship("AscendanceGenotype", back_populates="genotype", uselist=False, lazy='select')
+    sante = relationship("SanteGenotype", back_populates="genotype", uselist=False, lazy='select')
+    education = relationship("EducationGenotype", back_populates="genotype", uselist=False, lazy='select')
+    plans_intervention = relationship("PlanInterventionIndividualise", back_populates="genotype", lazy='select')
 
 class AscendanceGenotype(Base):
     __tablename__ = "ascendance_genotypes"
@@ -296,7 +347,10 @@ class AscendanceGenotype(Base):
     profession_mere = Column(String(255), nullable=True)
     domicile_mere = Column(String(255), nullable=True)
     proprietaire_domicile_mere = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = {'comment': "Informations d’ascendance pour le génotype."}
+
+    genotype = relationship("GenotypeIndividuel", back_populates="ascendance", lazy='select')
 
 class SanteGenotype(Base):
     __tablename__ = "sante_genotypes"
@@ -312,7 +366,10 @@ class SanteGenotype(Base):
     allergie = Column(Text, nullable=True)
     groupe_sanguin = Column(String(10), nullable=True)
     rhesus = Column(String(10), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = {'comment': "Informations sanitaires pour le génotype."}
+
+    genotype = relationship("GenotypeIndividuel", back_populates="sante", lazy='select')
 
 class EducationGenotype(Base):
     __tablename__ = "education_genotypes"
@@ -322,7 +379,10 @@ class EducationGenotype(Base):
     derniere_classe = Column(String(255), nullable=True)
     date_arret_cours = Column(Date, nullable=True)
     raisons_decrochage = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = {'comment': "Informations éducatives pour le génotype."}
+
+    genotype = relationship("GenotypeIndividuel", back_populates="education", lazy='select')
 
 # ========================================================================
 # ========================= PLANS D’INTERVENTION =========================
@@ -338,13 +398,17 @@ class PlanInterventionIndividualise(Base):
     statut = Column(Enum(StatutEnum), nullable=False, default=StatutEnum.EN_COURS)
     date_creation = Column(DateTime(timezone=True), server_default=func.now())
     date_mise_a_jour = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
         Index('idx_plan_genotype_statut', 'genotype_id', 'statut'),
         Index('idx_plan_dates', 'date_creation', 'date_mise_a_jour'),
         {'comment': "Plans d’intervention individualisés basés sur le génotype."}
     )
+
+    genotype = relationship("GenotypeIndividuel", back_populates="plans_intervention", lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="plans_intervention", lazy='select')
     
-# ============================================================================
+# ============================================================================    
 # ========================= ACCRÉDITATIONS ===================================
 # ============================================================================
 
@@ -352,13 +416,21 @@ class Accreditation(Base):
     __tablename__ = "accreditations"
     id = Column(Integer, primary_key=True)
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id"))
+    formation_id = Column(Integer, ForeignKey("formations.id"))
     etablissement = Column(String(255), nullable=False)
     date_emission = Column(DateTime(timezone=True), nullable=False)
     date_expiration = Column(DateTime(timezone=True), nullable=True)
     statut = Column(Enum(StatutEnum), nullable=False, default=StatutEnum.EN_ATTENTE)
-    __table_args__ = {'comment': "Accréditations pour accès aux établissements pénitentiaires."}
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (
+        Index('idx_accreditation_user_formation', 'utilisateur_id', 'formation_id'),
+        {'comment': "Accréditations pour accès aux établissements pénitentiaires."}
+    )
 
-# ============================================================================
+    utilisateur = relationship("Utilisateur", back_populates="accreditations", lazy='select')
+    formation = relationship("Formation", back_populates="accreditations", lazy='select')
+
+# ============================================================================    
 # ========================= ACTUALITÉS =======================================
 # ============================================================================
 
@@ -380,3 +452,5 @@ class Actualite(Base):
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id"))
     __table_args__ = {'comment': "Actualités et articles de blog."}
+
+    utilisateur = relationship("Utilisateur", back_populates="actualites", lazy='select')

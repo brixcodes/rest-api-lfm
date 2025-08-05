@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     DOCUMENTS_STORAGE_PATH: str
     IMAGES_STORAGE_PATH: str
     AUDIOS_STORAGE_PATH: str
+    VIDEOS_STORAGE_PATH: str
 
     # --- Config Pydantic ---
     model_config = SettingsConfigDict(
