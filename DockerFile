@@ -1,13 +1,20 @@
-FROM python:3.9
+FROM python:3.13.5-slim
 
+# Création de l'utilisateur non-root pour plus de sécurité
 RUN useradd -m -u 1000 user
 USER user
 ENV PATH="/home/user/.local/bin:$PATH"
 
 WORKDIR /app
 
-COPY --chown=user ./requirements.txt requirements.txt
+# Copier uniquement requirements.txt d'abord pour optimiser le cache Docker
+COPY --chown=user requirements.txt requirements.txt
+
+# Installer les dépendances sans cache pip
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
+# Copier le reste du projet
 COPY --chown=user . /app
+
+# Commande pour lancer FastAPI avec uvicorn sur le port 7860
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]
