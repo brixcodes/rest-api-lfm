@@ -1,0 +1,19 @@
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Dossiers virtuels
+env/
+venv/
+
+# Dossier static
+src/static/
+
+# Fichiers temporaires
+*.log
+*.tmp
+
+# Configs locales
+# *.env
