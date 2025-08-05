@@ -5,8 +5,11 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import time
 import os
+<<<<<<< HEAD
 
 # Supposons que router est défini dans src/api/router.py
+=======
+>>>>>>> 2742ea655259ddd3fa543bc41d005301aa8640d9
 from src.api.router import router
 from src.util.database.database import init_db, close_db
 from src.util.helper.logger import log_error, log_info
@@ -70,4 +73,8 @@ if os.path.exists("src/static"):
 
 @app.get("/")
 async def root():
+<<<<<<< HEAD
     return {"message": "Welcome to the Education Management API"}
+=======
+    return {"message": "Welcome to the Education Management API"}
+>>>>>>> 2742ea655259ddd3fa543bc41d005301aa8640d9

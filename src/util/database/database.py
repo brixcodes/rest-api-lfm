@@ -10,12 +10,20 @@ logging.basicConfig(level=logging.INFO)
 async_engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
+<<<<<<< HEAD
     future=True,
     # pool_size=20,
     # max_overflow=10,
     # pool_timeout=30,
     # pool_recycle=1800,
     # pool_pre_ping=True,
+=======
+    pool_size=20,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=1800,
+    pool_pre_ping=True,
+>>>>>>> 2742ea655259ddd3fa543bc41d005301aa8640d9
     poolclass=AsyncAdaptedQueuePool
 )
 
