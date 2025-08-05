@@ -16,11 +16,8 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # Copier le reste du projet
 COPY --chown=user . /app
 
-# Grant full permissions to the static directory for document storage
-RUN mkdir -p src/static && chmod -R 755 src/static
-
-# Exposer le port
+# Exposer le port 7860 (standard pour Hugging Face Spaces)
 EXPOSE 7860
 
-# Commande pour lancer FastAPI avec uvicorn sur le port 7860
+# Commande pour lancer FastAPI avec Uvicorn sur le port 7860
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]
