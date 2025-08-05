@@ -179,7 +179,7 @@ class ActualiteLight(BaseModel):
 # ========================= SCHÉMAS COMPLETS =======================
 # ==================================================================
 
-class LoginSchemas(BaseModel):
+class loginSchema(BaseModel):
     email: str
     password: str
         

@@ -42,7 +42,7 @@ from src.api.schema import (
     PlanInterventionIndividualise, PlanInterventionIndividualiseLight, PlanInterventionIndividualiseCreate, PlanInterventionIndividualiseUpdate,
     Accreditation, AccreditationLight, AccreditationCreate, AccreditationUpdate,
     Actualite, ActualiteLight, ActualiteCreate, ActualiteUpdate,
-    Paiement, PaiementLight, PaiementCreate, PaiementUpdate
+    Paiement, PaiementLight, PaiementCreate, PaiementUpdate, loginSchema
 )
 from src.api.model import (
     Permission as PermissionModel, Role as RoleModel, Utilisateur as UtilisateurModel,
@@ -680,20 +680,20 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                     detail="Erreur lors de la confirmation de réinitialisation"
                 )
 
-    async def login(self, db: AsyncSession, email: str, password: str) -> dict:
+    async def login(self, db: AsyncSession, account: loginSchema) -> dict:
             """Authentifie un utilisateur et retourne un token JWT."""
             try:
-                query = select(UtilisateurModel).filter(UtilisateurModel.email == email)
+                query = select(UtilisateurModel).filter(UtilisateurModel.email == account.email)
                 result = await db.execute(query)
                 db_obj = result.scalars().first()
                 if not db_obj:
-                    logger.warning(f"Tentative de connexion avec email non trouvé: {email}")
+                    logger.warning(f"Tentative de connexion avec email non trouvé: {account.email}")
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Email ou mot de passe incorrect"
                     )
-                if not pwd_context.verify(password, db_obj.password):
-                    logger.warning(f"Mot de passe incorrect pour l'utilisateur: {email}")
+                if not pwd_context.verify(account.password, db_obj.password):
+                    logger.warning(f"Mot de passe incorrect pour l'utilisateur: {account.email}")
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Email ou mot de passe incorrect"
@@ -705,7 +705,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                     "exp": datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
                 }
                 token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-                logger.info(f"Connexion réussie pour l'utilisateur: {email}")
+                logger.info(f"Connexion réussie pour l'utilisateur: {account.email}")
                 return {
                     "access_token": token,
                     "token_type": "bearer"
