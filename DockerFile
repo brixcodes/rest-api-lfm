@@ -16,5 +16,8 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # Copier le reste du projet
 COPY --chown=user . /app
 
+# Exposer le port
+EXPOSE 7860
+
 # Commande pour lancer FastAPI avec uvicorn sur le port 7860
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]
