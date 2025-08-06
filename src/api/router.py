@@ -627,7 +627,7 @@ async def get_formation(formation_id: int, db: AsyncSession = Depends(get_async_
 
 @router.get(
     "/formations",
-    response_model=List[Formation],
+    response_model=List[FormationLight],
     tags=["Formations"],
     summary="Lister toutes les formations",
     description="Récupère une liste paginée de toutes les formations avec leurs relations."

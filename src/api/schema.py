@@ -66,6 +66,8 @@ class FormationLight(BaseModel):
     titre: str
     specialite: str
     statut: StatutFormationEnum
+    photo_couverture: Optional[str] = None
+    description: Optional[str] = None
     frais: float = Field(ge=0.0)
     class Config:
         from_attributes = True

@@ -166,15 +166,20 @@ class BaseService(Generic[ModelType, SchemaType, CreateSchemaType, UpdateSchemaT
             )
 
     async def _safe_from_orm(self, db_obj, schema_class):
-        """Sérialise un objet SQLAlchemy de manière sûre en évitant les relations lazy."""
         try:
+            # Preload all relationships defined in the model to avoid lazy-loading issues
+            query = select(db_obj.__class__).filter(db_obj.__class__.id == db_obj.id).options(
+                selectinload("*")  # Load all relationships eagerly
+            )
+            result = await db_obj._sa_instance_state.session.execute(query)
+            db_obj = result.scalars().first()
             return schema_class.from_orm(db_obj)
         except Exception as e:
-            if "MissingGreenlet" in str(e) or "greenlet_spawn" in str(e):
-                # Si c'est un problème de relation lazy, utiliser le light_schema
-                return self.light_schema.from_orm(db_obj)
-            else:
-                raise e
+            logger.error(f"Erreur lors de la sérialisation de {self.entity_name}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erreur lors de la sérialisation de {self.entity_name}"
+            )
 
     async def update(self, db: AsyncSession, id: int, obj_in: UpdateSchemaType) -> SchemaType:
         """Met à jour une entité."""
@@ -1460,12 +1465,44 @@ class FormationService(BaseService[FormationModel, Formation, FormationCreate, F
         await self.check_unique(db, "titre", obj_in.titre, "titre")
         return await super().create(db, obj_in)
 
-    async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[Formation]:
+    async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[FormationLight]:
         """Récupère toutes les formations avec leurs relations."""
         return await super().get_all(db, skip, limit, [
             FormationModel.modules, FormationModel.inscriptions, FormationModel.projets_collectifs,
             FormationModel.accreditations
         ])
+        
+    async def update(self, db: AsyncSession, id: int, obj_in: FormationUpdate) -> Formation:
+        try:
+            db_obj = await self.get_or_404(db, id)
+            update_data = obj_in.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(db_obj, key, value)
+            db.add(db_obj)
+            await db.flush()
+            await db.refresh(db_obj)
+            # Eagerly load relationships
+            query = select(FormationModel).filter(FormationModel.id == id).options(
+                selectinload(FormationModel.modules),
+                selectinload(FormationModel.inscriptions),
+                selectinload(FormationModel.projets_collectifs),
+                selectinload(FormationModel.accreditations)
+            )
+            result = await db.execute(query)
+            db_obj = result.scalars().first()
+            return self.schema.from_orm(db_obj)
+        except IntegrityError as e:
+            logger.error(f"Erreur d'intégrité lors de la mise à jour de Formation: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Formation existe déjà"
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la mise à jour de Formation: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erreur de base de données lors de la mise à jour de Formation"
+            )
 
 
 # ============================================================================
