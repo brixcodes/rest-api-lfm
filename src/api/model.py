@@ -66,7 +66,7 @@ class Utilisateur(Base):
     sexe = Column(Enum(SexeEnum), nullable=False)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password = Column(String(128), nullable=False)
-    statut = Column(Enum(StatutCompteEnum), nullable=False, default=StatutCompteEnum.INACTIF)
+    statut = Column(Enum(StatutCompteEnum), nullable=False, default=StatutCompteEnum.ACTIF)
     est_actif = Column(Boolean, default=True)
     last_password_change = Column(DateTime(timezone=True), nullable=True)
     date_naissance = Column(Date, nullable=True)

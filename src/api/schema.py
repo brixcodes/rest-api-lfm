@@ -36,7 +36,6 @@ class UtilisateurLight(BaseModel):
     date_naissance: Optional[date]
     created_at: datetime
     updated_at: datetime
-    role_id: Optional[int]
     role: Optional[RoleLight]
     permissions: List[PermissionLight] = []  
     class Config:
@@ -495,12 +494,7 @@ class UtilisateurCreate(BaseModel):
     prenom: Optional[str] = Field(None, max_length=255)
     sexe: SexeEnum
     email: str = Field(..., max_length=255)
-    password: str = Field(..., max_length=128)
-    statut: StatutCompteEnum = StatutCompteEnum.INACTIF
-    est_actif: bool = True
-    date_naissance: Optional[date] = None
-    role_id: Optional[int] = None
-    permission_ids: List[int] = []
+    role_name: RoleEnum
     class Config:
         from_attributes = True
 
@@ -709,7 +703,7 @@ class ActualiteCreate(BaseModel):
     date_publication: date
     date_debut_formation: Optional[date] = None
     date_fin_formation: Optional[date] = None
-    document_url: Optional[str] = Field(None, max_length=255)
+    document_url: Optional[str] = None
     auteur: str = Field(..., max_length=150)
     utilisateur_id: int
     class Config:

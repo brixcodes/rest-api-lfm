@@ -60,6 +60,7 @@ from src.api.model import (
     association_roles_permissions, association_utilisateurs_permissions,
     association_projets_collectifs_membres
 )
+from src.util.helper.email.email import EmailService
 
 logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -391,22 +392,109 @@ class FileService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Type de fichier '{file_type.value}' non supporté."
             )
+        
         config = self.FILE_CONFIG[file_type]
-        filename = file_url.split("/")[-1]
+        
+        # Extraire le nom de fichier de l'URL
+        try:
+            filename = file_url.split("/")[-1]
+            if not filename or filename == "":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="URL de fichier invalide"
+                )
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL de fichier invalide"
+            )
+        
         file_path = Path(config["storage_path"]) / filename
+        
         try:
             if file_path.exists():
+                # Vérifier que le fichier est bien dans le bon répertoire
+                if not str(file_path).startswith(str(Path(config["storage_path"]))):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Chemin de fichier non autorisé"
+                    )
+                
                 file_path.unlink()
                 logger.info(f"Fichier {file_path} supprimé avec succès.")
-                return f"Fichier {file_url} supprimé avec succès."
+                return f"Fichier {filename} supprimé avec succès."
             else:
                 logger.warning(f"Fichier {file_path} non trouvé pour suppression.")
-                return f"Fichier {file_url} non trouvé."
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Fichier {filename} non trouvé"
+                )
+        except HTTPException:
+            raise
+        except PermissionError:
+            logger.error(f"Erreur de permission lors de la suppression du fichier {file_url}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erreur de permission lors de la suppression du fichier"
+            )
         except Exception as e:
             logger.error(f"Erreur suppression fichier {file_url}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Erreur lors de la suppression du fichier '{file_url}'."
+                detail=f"Erreur lors de la suppression du fichier '{filename}'"
+            )
+
+    async def delete_file_by_url(self, file_url: str, file_type: FileTypeEnum) -> str:
+        """Supprime un fichier à partir de son URL et retourne un message."""
+        return await self.delete_file(file_url, file_type)
+
+    async def delete_multiple_files(self, file_urls: List[str], file_type: FileTypeEnum) -> List[str]:
+        """Supprime plusieurs fichiers à partir de leurs URLs et retourne une liste de messages."""
+        results = []
+        for file_url in file_urls:
+            try:
+                result = await self.delete_file(file_url, file_type)
+                results.append(result)
+            except HTTPException as e:
+                results.append(f"Erreur: {e.detail}")
+            except Exception as e:
+                results.append(f"Erreur inattendue: {str(e)}")
+        return results
+
+    async def list_files(self, file_type: FileTypeEnum, request: Request) -> List[dict]:
+        """Liste tous les fichiers d'un type donné avec leurs URLs."""
+        if file_type not in self.FILE_CONFIG:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Type de fichier '{file_type.value}' non supporté."
+            )
+        
+        config = self.FILE_CONFIG[file_type]
+        storage_path = Path(config["storage_path"])
+        
+        try:
+            if not storage_path.exists():
+                return []
+            
+            files = []
+            for file_path in storage_path.iterdir():
+                if file_path.is_file():
+                    base_url = str(request.base_url).rstrip("/")
+                    file_url = f"{base_url}{config['url_prefix'].rstrip('/')}/{file_path.name}"
+                    files.append({
+                        "filename": file_path.name,
+                        "url": file_url,
+                        "size": file_path.stat().st_size,
+                        "created_at": datetime.fromtimestamp(file_path.stat().st_ctime).isoformat(),
+                        "modified_at": datetime.fromtimestamp(file_path.stat().st_mtime).isoformat()
+                    })
+            
+            return files
+        except Exception as e:
+            logger.error(f"Erreur lors de la liste des fichiers {file_type.value}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erreur lors de la liste des fichiers {file_type.value}"
             )
               
 # ============================================================================
@@ -456,22 +544,22 @@ class PermissionService(BaseService[PermissionModel, Permission, PermissionCreat
                 db_obj = await self.get_or_404(db, id)
                 if obj_in.nom != db_obj.nom:
                     await self.check_unique(db, "nom", obj_in.nom, "nom")
-            
-            # Récupérer l'objet à mettre à jour
-            db_obj = await self.get_or_404(db, id)
-            
-            # Mettre à jour les champs
-            update_data = obj_in.model_dump(exclude_unset=True)
-            for key, value in update_data.items():
-                setattr(db_obj, key, value)
-            
-            # Sauvegarder les changements
-            db.add(db_obj)
-            await db.flush()
-            await db.refresh(db_obj)
-            
-            # Retourner en utilisant le light_schema
-            return self.light_schema.from_orm(db_obj)
+                
+                # Récupérer l'objet à mettre à jour
+                db_obj = await self.get_or_404(db, id)
+                
+                # Mettre à jour les champs
+                update_data = obj_in.model_dump(exclude_unset=True)
+                for key, value in update_data.items():
+                    setattr(db_obj, key, value)
+                
+                # Sauvegarder les changements
+                db.add(db_obj)
+                await db.flush()
+                await db.refresh(db_obj)
+                
+                # Retourner en utilisant le light_schema
+                return self.light_schema.from_orm(db_obj)
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de la mise à jour de la permission: {str(e)}")
             raise HTTPException(
@@ -917,36 +1005,84 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         super().__init__(UtilisateurModel, Utilisateur, UtilisateurLight)
 
     def _generate_password(self) -> str:
-        """Génère un mot de passe aléatoire sécurisé."""
-        alphabet = string.ascii_letters + string.digits + string.punctuation
+        """Génère un mot de passe aléatoire (lettres + chiffres uniquement)."""
+        alphabet = string.ascii_letters + string.digits
         return ''.join(secrets.choice(alphabet) for _ in range(12))
+    
+    # Ajouter cette méthode dans la classe UtilisateurService
+    async def _check_role_by_name(self, db: AsyncSession, role_name: str) -> RoleLight:
+        """Vérifie si un rôle existe par son nom et retourne l'objet RoleModel."""
+        query = select(RoleModel).filter(RoleModel.nom == role_name)
+        result = await db.execute(query)
+        role = result.scalars().first()
+        if not role:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Rôle avec le nom '{role_name}' non trouvé"
+            )
+        return role
 
+    # Remplacer la méthode create existante dans UtilisateurService
     async def create(self, db: AsyncSession, obj_in: UtilisateurCreate) -> UtilisateurLight:
-        """Crée un nouvel utilisateur avec mot de passe haché."""
+        """Crée un nouvel utilisateur avec validation et envoie un email avec le mot de passe."""
+        # Vérifier l'unicité de l'email
         await self.check_unique(db, "email", obj_in.email, "email")
-        async with db.begin():
+        role = await self._check_role_by_name(db, obj_in.role_name)
+       
+        # Générer un mot de passe si non fourni
+        password = self._generate_password()
+        hashed_password = pwd_context.hash(password)
+        
+        # Préparer les données de l'utilisateur
+        obj_data = obj_in.dict(exclude_unset=True)
+        obj_data['password'] = hashed_password
+        obj_data['role_id'] = role.id
+        if 'role_name' in obj_data:
+            del obj_data['role_name']
+        
+        try:
+            db_obj = self.model(**obj_data)
+            db.add(db_obj)
+            await db.flush()
+            await db.refresh(db_obj)
+            
+            # Envoi de l'email de bienvenue avec le mot de passe
+            email_service = EmailService()
             try:
-                utilisateur_data = obj_in.dict(exclude_unset=True)
-                password = self._generate_password()
-                utilisateur_data["password"] = pwd_context.hash(password)
-                db_obj = UtilisateurModel(**utilisateur_data)
-                if obj_in.permission_ids:
-                    permissions = await db.execute(
-                        select(PermissionModel).filter(PermissionModel.id.in_(obj_in.permission_ids))
-                    )
-                    db_obj.permissions = permissions.scalars().all()
-                if obj_in.role_id:
-                    await self.get_or_404(db, obj_in.role_id, RoleModel, "Rôle")
-                db.add(db_obj)
-                await db.flush()
-                await db.refresh(db_obj)
-                return UtilisateurLight.from_orm(db_obj)
-            except SQLAlchemyError as e:
-                logger.error(f"Erreur lors de la création de l'utilisateur: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Erreur lors de la création de l'utilisateur"
+                await email_service.send_new_user_email(obj_in.email, password, "fr")
+                
+            except Exception as e:
+                logger.warning(f"Échec de l'envoi de l'email à {obj_in.email}: {str(e)}")
+                # Ne pas échouer la création si l'email ne s'envoie pas
+            finally:
+                await email_service.close()
+            
+            # Recharger l'utilisateur avec ses relations pour éviter MissingGreenlet
+            from sqlalchemy.future import select
+            from sqlalchemy.orm import selectinload
+            result = await db.execute(
+                select(self.model)
+                .options(
+                    selectinload(self.model.permissions),
+                    selectinload(self.model.role)
                 )
+                .where(self.model.id == db_obj.id)
+            )
+            db_obj = result.scalars().first()
+            
+            return self.light_schema.from_orm(db_obj)
+        except IntegrityError as e:
+            logger.error(f"Erreur d'intégrité lors de la création de l'utilisateur: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Utilisateur avec cet email existe déjà"
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la création de l'utilisateur: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erreur de base de données lors de la création de l'utilisateur"
+            )
 
     async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[UtilisateurLight]:
         """Récupère tous les utilisateurs avec leurs relations."""
@@ -1024,23 +1160,26 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                     detail="Erreur lors du changement de mot de passe"
                 )
 
-    async def reset_password(self, db: AsyncSession, email: str) -> str:
-        """Génère un token de réinitialisation de mot de passe."""
+    async def reset_password(self, db: AsyncSession, user_id: int) -> None:
+        """Réinitialise le mot de passe d'un utilisateur, génère un nouveau mot de passe, l'envoie par email."""
         async with db.begin():
             try:
-                query = select(UtilisateurModel).filter(UtilisateurModel.email == email)
+                query = select(UtilisateurModel).filter(UtilisateurModel.id == user_id)
                 result = await db.execute(query)
                 db_obj = result.scalars().first()
                 if not db_obj:
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Utilisateur avec cet email non trouvé"
+                        detail="Utilisateur avec cet ID non trouvé"
                     )
-                reset_token = str(uuid4())
-                db_obj.reset_token = reset_token
-                db_obj.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
+                new_password = self._generate_password()
+                db_obj.password = pwd_context.hash(new_password)
+                db_obj.reset_token = None
+                db_obj.reset_token_expiry = None
                 await db.flush()
-                return reset_token
+                email_service = EmailService()
+                await email_service.send_password_reset(db_obj.email, new_password, "fr")
+                await email_service.close()
             except SQLAlchemyError as e:
                 logger.error(f"Erreur lors de la réinitialisation du mot de passe: {str(e)}")
                 raise HTTPException(
@@ -1065,6 +1204,10 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                 db_obj.reset_token = None
                 db_obj.reset_token_expiry = None
                 await db.flush()
+                # Send email with new password
+                email_service = EmailService()
+                await email_service.send_password_reset(db_obj.email, new_password, "fr")
+                await email_service.close()
             except SQLAlchemyError as e:
                 logger.error(f"Erreur lors de la confirmation de réinitialisation: {str(e)}")
                 raise HTTPException(
@@ -1109,6 +1252,32 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                     detail="Erreur lors de la connexion"
                 )
                 
+    async def get_current_user(self, db, token: str):
+        from jose import jwt, JWTError
+        from fastapi import HTTPException, status
+        from src.util.database.setting import settings
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            user_id = int(payload.get("sub"))
+            if user_id is None:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
+        except JWTError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
+        from sqlalchemy.future import select
+        from sqlalchemy.orm import selectinload
+        result = await db.execute(
+            select(self.model)
+            .options(
+                selectinload(self.model.permissions),
+                selectinload(self.model.role)
+            )
+            .where(self.model.id == user_id)
+        )
+        user = result.scalars().first()
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur non trouvé")
+        return self.light_schema.from_orm(user)
+
 # ============================================================================
 # ========================= SERVICE DES FORMATIONS ===========================
 # ============================================================================

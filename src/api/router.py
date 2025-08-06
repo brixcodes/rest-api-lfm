@@ -107,7 +107,7 @@ async def login(form_data: loginSchema, db: AsyncSession = Depends(get_async_db)
         - **401**: Email ou mot de passe incorrect.
         - **500**: Erreur interne du serveur.
     """
-    return await utilisateur_service.login(db, form_data.email, form_data.password)
+    return await utilisateur_service.login(db, form_data)
 
 @router.get(
     "/users/me",
@@ -169,7 +169,7 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_async_db)):
 
 @router.get(
     "/users",
-    response_model=List[Utilisateur],
+    response_model=List[UtilisateurLight],
     tags=["Utilisateurs"],
     summary="Lister tous les utilisateurs",
     description="Récupère une liste paginée de tous les utilisateurs avec leurs relations."
@@ -244,7 +244,8 @@ async def reset_password(user_id: int, db: AsyncSession = Depends(get_async_db))
         - **404**: Utilisateur non trouvé.
         - **500**: Erreur interne du serveur.
     """
-    return await utilisateur_service.reset_password(db, user_id)
+    await utilisateur_service.reset_password(db, user_id)
+    return {"message": "Mot de passe réinitialisé et envoyé par email."}
 
 @router.post(
     "/users/change-password",
@@ -2406,20 +2407,86 @@ async def upload_multiple_files(request: Request, files: List[UploadFile] = File
     return await file_service.upload_files(request, files, file_type)
 
 @router.delete(
-    "/files/{file_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    "/files/delete",
+    response_model=str,
     tags=["Fichiers"],
     summary="Supprimer un fichier",
-    description="Supprime un fichier spécifique par son ID."
+    description="Supprime un fichier spécifique par son URL et type."
 )
-async def delete_file(file_id: int, db: AsyncSession = Depends(get_async_db)):
+async def delete_file(file_url: str, file_type: FileTypeEnum, db: AsyncSession = Depends(get_async_db)):
     """
     Supprime un fichier spécifique.
 
-    - **file_id**: ID du fichier à supprimer.
+    - **file_url**: URL complète du fichier à supprimer.
+    - **file_type**: Type de fichier (document, image, audio, vidéo).
     - **Réponses**:
-        - **204**: Fichier supprimé avec succès.
+        - **200**: Fichier supprimé avec succès (ex. `"Fichier http://localhost:8000/static/documents/file.pdf supprimé avec succès."`).
+        - **400**: Type de fichier non supporté ou URL invalide.
         - **404**: Fichier non trouvé.
         - **500**: Erreur interne du serveur.
     """
-    await file_service.delete_file(db, file_id)
+    return await file_service.delete_file_by_url(file_url, file_type)
+
+@router.delete(
+    "/files/delete-by-filename",
+    response_model=str,
+    tags=["Fichiers"],
+    summary="Supprimer un fichier par nom",
+    description="Supprime un fichier spécifique par son nom de fichier et type."
+)
+async def delete_file_by_filename(filename: str, file_type: FileTypeEnum, request: Request, db: AsyncSession = Depends(get_async_db)):
+    """
+    Supprime un fichier spécifique par son nom.
+
+    - **filename**: Nom du fichier à supprimer (ex. "document.pdf").
+    - **file_type**: Type de fichier (document, image, audio, vidéo).
+    - **Réponses**:
+        - **200**: Fichier supprimé avec succès (ex. `"Fichier document.pdf supprimé avec succès."`).
+        - **400**: Type de fichier non supporté.
+        - **404**: Fichier non trouvé.
+        - **500**: Erreur interne du serveur.
+    """
+    # Construire l'URL complète à partir du nom de fichier
+    config = file_service.FILE_CONFIG[file_type]
+    base_url = f"{request.base_url}{config['url_prefix'].lstrip('/')}"
+    file_url = f"{base_url}/{filename}"
+    return await file_service.delete_file_by_url(file_url, file_type)
+
+@router.delete(
+    "/files/delete-multiple",
+    response_model=List[str],
+    tags=["Fichiers"],
+    summary="Supprimer plusieurs fichiers",
+    description="Supprime plusieurs fichiers spécifiques par leurs URLs et type."
+)
+async def delete_multiple_files(file_urls: List[str], file_type: FileTypeEnum, db: AsyncSession = Depends(get_async_db)):
+    """
+    Supprime plusieurs fichiers spécifiques.
+
+    - **file_urls**: Liste des URLs complètes des fichiers à supprimer.
+    - **file_type**: Type de fichiers (document, image, audio, vidéo).
+    - **Réponses**:
+        - **200**: Résultats de suppression (ex. `["Fichier doc1.pdf supprimé avec succès.", "Fichier doc2.pdf supprimé avec succès."]`).
+        - **400**: Type de fichier non supporté ou URLs invalides.
+        - **500**: Erreur interne du serveur.
+    """
+    return await file_service.delete_multiple_files(file_urls, file_type)
+
+@router.get(
+    "/files/list",
+    response_model=List[dict],
+    tags=["Fichiers"],
+    summary="Lister les fichiers",
+    description="Liste tous les fichiers d'un type donné avec leurs informations."
+)
+async def list_files(request: Request, file_type: FileTypeEnum = FileTypeEnum.DOCUMENT, db: AsyncSession = Depends(get_async_db)):
+    """
+    Liste tous les fichiers d'un type donné.
+
+    - **file_type**: Type de fichiers à lister (document, image, audio, vidéo).
+    - **Réponses**:
+        - **200**: Liste des fichiers (ex. `[{"filename": "doc.pdf", "url": "http://localhost:8000/static/documents/doc.pdf", "size": 1024, "created_at": "2024-01-01T12:00:00", "modified_at": "2024-01-01T12:00:00"}]`).
+        - **400**: Type de fichier non supporté.
+        - **500**: Erreur interne du serveur.
+    """
+    return await file_service.list_files(file_type, request)
