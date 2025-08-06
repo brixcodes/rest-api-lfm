@@ -108,33 +108,41 @@ class BaseService(Generic[ModelType, SchemaType, CreateSchemaType, UpdateSchemaT
 
     async def create(self, db: AsyncSession, obj_in: CreateSchemaType) -> SchemaType:
         """Crée une nouvelle entité."""
-        async with db.begin():
-            try:
-                db_obj = self.model(**obj_in.dict(exclude_unset=True))
-                db.add(db_obj)
-                await db.flush()
-                await db.refresh(db_obj)
-                return self.light_schema.from_orm(db_obj)
-            except IntegrityError as e:
-                logger.error(f"Erreur d'intégrité lors de la création de {self.entity_name}: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"{self.entity_name} existe déjà"
-                )
-            except SQLAlchemyError as e:
-                logger.error(f"Erreur de base de données lors de la création de {self.entity_name}: {str(e)}", exc_info=True)
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Erreur de base de données lors de la création de {self.entity_name}"
-                )
+        try:
+            db_obj = self.model(**obj_in.dict(exclude_unset=True))
+            db.add(db_obj)
+            await db.flush()
+            await db.refresh(db_obj)
+            return self.light_schema.from_orm(db_obj)
+        except IntegrityError as e:
+            logger.error(f"Erreur d'intégrité lors de la création de {self.entity_name}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{self.entity_name} existe déjà"
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la création de {self.entity_name}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erreur de base de données lors de la création de {self.entity_name}"
+            )
 
     async def get(self, db: AsyncSession, id: int) -> SchemaType:
-        """Récupère une entité par ID."""
+        """Récupère une entité par ID avec ses relations."""
         try:
-            db_obj = await self.get_or_404(db, id)
+            query = select(self.model).filter(self.model.id == id).options(
+                selectinload("*")  # Charge toutes les relations définies
+            )
+            result = await db.execute(query)
+            db_obj = result.scalars().first()
+            if not db_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"{self.entity_name} avec l'ID {id} non trouvé"
+                )
             return self.schema.from_orm(db_obj)
         except SQLAlchemyError as e:
-            logger.error(f"Erreur de base de données lors de la récupération de {self.entity_name}: {str(e)}")
+            logger.error(f"Erreur de base de données lors de la récupération de {self.entity_name}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Erreur de base de données lors de la récupération de {self.entity_name}"
@@ -149,79 +157,95 @@ class BaseService(Generic[ModelType, SchemaType, CreateSchemaType, UpdateSchemaT
             result = await db.execute(query)
             return [self.schema.from_orm(obj) for obj in result.scalars().all()]
         except SQLAlchemyError as e:
-            logger.error(f"Erreur de base de données lors de la récupération des {self.entity_name}s: {str(e)}")
+            logger.error(f"Erreur de base de données lors de la récupération des {self.entity_name}s: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Erreur de base de données lors de la récupération des {self.entity_name}s"
             )
 
+    async def _safe_from_orm(self, db_obj, schema_class):
+        """Sérialise un objet SQLAlchemy de manière sûre en évitant les relations lazy."""
+        try:
+            return schema_class.from_orm(db_obj)
+        except Exception as e:
+            if "MissingGreenlet" in str(e) or "greenlet_spawn" in str(e):
+                # Si c'est un problème de relation lazy, utiliser le light_schema
+                return self.light_schema.from_orm(db_obj)
+            else:
+                raise e
+
     async def update(self, db: AsyncSession, id: int, obj_in: UpdateSchemaType) -> SchemaType:
         """Met à jour une entité."""
-        async with db.begin():
-            try:
-                db_obj = await self.get_or_404(db, id)
-                update_data = obj_in.dict(exclude_unset=True)
-                for key, value in update_data.items():
-                    setattr(db_obj, key, value)
-                await db.flush()
-                await db.refresh(db_obj)
-                return self.schema.from_orm(db_obj)
-            except SQLAlchemyError as e:
-                logger.error(f"Erreur de base de données lors de la mise à jour de {self.entity_name}: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Erreur de base de données lors de la mise à jour de {self.entity_name}"
-                )
+        try:
+            db_obj = await self.get_or_404(db, id)
+            update_data = obj_in.model_dump(exclude_unset=True)
+            
+            for key, value in update_data.items():
+                setattr(db_obj, key, value)
+            db.add(db_obj)
+            await db.flush()
+            await db.refresh(db_obj)
+            # Utiliser la méthode sûre pour éviter les problèmes de relations lazy
+            return await self._safe_from_orm(db_obj, self.schema)
+        except IntegrityError as e:
+            logger.error(f"Erreur d'intégrité lors de la mise à jour de {self.entity_name}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{self.entity_name} existe déjà"
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la mise à jour de {self.entity_name}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erreur de base de données lors de la mise à jour de {self.entity_name}"
+            )
 
     async def delete(self, db: AsyncSession, id: int) -> None:
         """Supprime une entité."""
-        async with db.begin():
-            try:
-                db_obj = await self.get_or_404(db, id)
-                await db.delete(db_obj)
-                await db.flush()
-            except SQLAlchemyError as e:
-                logger.error(f"Erreur de base de données lors de la suppression de {self.entity_name}: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Erreur de base de données lors de la suppression de {self.entity_name}"
-                )
+        try:
+            db_obj = await self.get_or_404(db, id)
+            await db.delete(db_obj)
+            await db.flush()
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la suppression de {self.entity_name}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erreur de base de données lors de la suppression de {self.entity_name}"
+            )
 
     async def assign_relationship(self, db: AsyncSession, id: int, related_id: int, related_model: Type, related_field: str, related_name: str) -> SchemaType:
         """Assigne une relation à une entité."""
-        async with db.begin():
-            try:
-                db_obj = await self.get_or_404(db, id)
-                related_obj = await self.get_or_404(db, related_id, related_model, related_name)
-                related_list = getattr(db_obj, related_field)
-                if related_obj not in related_list:
-                    related_list.append(related_obj)
-                    await db.flush()
-                return self.schema.from_orm(db_obj)
-            except SQLAlchemyError as e:
-                logger.error(f"Erreur lors de l'assignation de {related_name} à {self.entity_name}: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Erreur lors de l'assignation de {related_name} à {self.entity_name}"
-                )
+        try:
+            db_obj = await self.get_or_404(db, id)
+            related_obj = await self.get_or_404(db, related_id, related_model, related_name)
+            related_list = getattr(db_obj, related_field)
+            if related_obj not in related_list:
+                related_list.append(related_obj)
+                await db.flush()
+            return self.schema.from_orm(db_obj)
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur lors de l'assignation de {related_name} à {self.entity_name}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erreur lors de l'assignation de {related_name} à {self.entity_name}"
+            )
 
     async def revoke_relationship(self, db: AsyncSession, id: int, related_id: int, related_model: Type, related_field: str, related_name: str) -> SchemaType:
         """Révoque une relation d'une entité."""
-        async with db.begin():
-            try:
-                db_obj = await self.get_or_404(db, id)
-                related_obj = await self.get_or_404(db, related_id, related_model, related_name)
-                related_list = getattr(db_obj, related_field)
-                if related_obj in related_list:
-                    related_list.remove(related_obj)
-                    await db.flush()
-                return self.schema.from_orm(db_obj)
-            except SQLAlchemyError as e:
-                logger.error(f"Erreur lors de la révocation de {related_name} de {self.entity_name}: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Erreur lors de la révocation de {related_name} de {self.entity_name}"
-                )
+        try:
+            db_obj = await self.get_or_404(db, id)
+            related_obj = await self.get_or_404(db, related_id, related_model, related_name)
+            related_list = getattr(db_obj, related_field)
+            if related_obj in related_list:
+                related_list.remove(related_obj)
+                await db.flush()
+            return self.schema.from_orm(db_obj)
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur lors de la révocation de {related_name} de {self.entity_name}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erreur lors de la révocation de {related_name} de {self.entity_name}"
+            )
 
 # ==================================================================================
 # ========================= SERVICE DE GESTION DES FICHIERS ========================
@@ -236,25 +260,25 @@ class FileService:
         FileTypeEnum.DOCUMENT: {
             "extensions": {".pdf", ".doc", ".docx", ".txt"},
             "max_size_mb": 50,
-            "storage_path": "/var/www/app/static/documents",
+            "storage_path": "static/documents",
             "url_prefix": "/static/documents",
         },
         FileTypeEnum.IMAGE: {
             "extensions": {".jpg", ".jpeg", ".png"},
             "max_size_mb": 20,
-            "storage_path": "/var/www/app/static/images",
+            "storage_path": "static/images",
             "url_prefix": "/static/images",
         },
         FileTypeEnum.AUDIO: {
             "extensions": {".mp3", ".wav", ".ogg"},
             "max_size_mb": 150,
-            "storage_path": "/var/www/app/static/audios",
+            "storage_path": "static/audios",
             "url_prefix": "/static/audios",
         },
         FileTypeEnum.VIDEO: {
             "extensions": {".mp4", ".avi", ".mkv"},
             "max_size_mb": 300,
-            "storage_path": "/var/www/app/static/videos",
+            "storage_path": "static/videos",
             "url_prefix": "/static/videos",
         }
     }
@@ -309,8 +333,8 @@ class FileService:
         ext = Path(original_filename).suffix.lower()
         return f"{uuid.uuid4().hex}{ext}"
 
-    async def upload_file(self, request: Request, file: UploadFile, file_type: FileTypeEnum) -> str:
-        """Upload un fichier unique et retourne son URL publique avec base URL dynamique."""
+    async def upload_file(self, request: Request, file: UploadFile, file_type: FileTypeEnum) -> dict:
+        """Upload un fichier unique et retourne un dictionnaire avec les informations du fichier."""
         logger.info(f"Début upload fichier: {file.filename} (type: {file_type.value})")
         self._validate_file(file, file_type)
         config = self.FILE_CONFIG[file_type]
@@ -330,7 +354,14 @@ class FileService:
             base_url = str(request.base_url).rstrip("/")
             url = f"{base_url}{config['url_prefix'].rstrip('/')}/{unique_filename}"
             logger.info(f"Upload réussi, URL: {url}")
-            return url
+            return {
+                "filename": unique_filename,
+                "original_filename": file.filename,
+                "url": url,
+                "file_type": file_type.value,
+                "size": len(content),
+                "path": str(file_path)
+            }
         except Exception as e:
             logger.error(f"Erreur upload fichier {file.filename}: {e}\n{traceback.format_exc()}")
             raise HTTPException(
@@ -340,18 +371,18 @@ class FileService:
         finally:
             await file.close()
 
-    async def upload_files(self, request: Request, files: List[UploadFile], file_type: FileTypeEnum) -> List[str]:
-        """Upload plusieurs fichiers et retourne une liste d'URLs publiques."""
+    async def upload_files(self, request: Request, files: List[UploadFile], file_type: FileTypeEnum) -> List[dict]:
+        """Upload plusieurs fichiers et retourne une liste de dictionnaires avec les informations des fichiers."""
         if not files:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Aucun fichier fourni pour l'upload."
             )
-        urls = []
+        results = []
         for file in files:
-            url = await self.upload_file(request, file, file_type)
-            urls.append(url)
-        return urls
+            result = await self.upload_file(request, file, file_type)
+            results.append(result)
+        return results
 
     async def delete_file(self, file_url: str, file_type: FileTypeEnum) -> str:
         """Supprime un fichier à partir de son URL et retourne un message."""
@@ -392,17 +423,338 @@ class PermissionService(BaseService[PermissionModel, Permission, PermissionCreat
         await self.check_unique(db, "nom", obj_in.nom, "nom")
         return await super().create(db, obj_in)
 
-    async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[Permission]:
-        """Récupère toutes les permissions avec leurs relations."""
-        return await super().get_all(db, skip, limit, [PermissionModel.roles, PermissionModel.utilisateurs])
+    async def get(self, db: AsyncSession, id: int) -> PermissionLight:
+        """Récupère une permission par ID."""
+        db_obj = await self.get_or_404(db, id)
+        return self.light_schema.from_orm(db_obj)
 
-    async def update(self, db: AsyncSession, id: int, obj_in: PermissionUpdate) -> Permission:
+    async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[PermissionLight]:
+        """Récupère toutes les permissions."""
+        try:
+            # Récupérer directement les objets de base de données sans relations
+            result = await db.execute(
+                select(self.model)
+                .offset(skip)
+                .limit(limit)
+            )
+            db_objects = result.scalars().all()
+            
+            # Convertir directement en PermissionLight pour éviter les problèmes de relations lazy
+            return [self.light_schema.from_orm(obj) for obj in db_objects]
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur lors de la récupération des permissions: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erreur lors de la récupération des permissions"
+            )
+
+    async def update(self, db: AsyncSession, id: int, obj_in: PermissionUpdate) -> PermissionLight:
         """Met à jour une permission avec validation de l'unicité du nom."""
-        if obj_in.nom:
+        try:
+            # Vérifier l'unicité du nom si modifié
+            if obj_in.nom:
+                db_obj = await self.get_or_404(db, id)
+                if obj_in.nom != db_obj.nom:
+                    await self.check_unique(db, "nom", obj_in.nom, "nom")
+            
+            # Récupérer l'objet à mettre à jour
             db_obj = await self.get_or_404(db, id)
-            if obj_in.nom != db_obj.nom:
-                await self.check_unique(db, "nom", obj_in.nom, "nom")
-        return await super().update(db, id, obj_in)  
+            
+            # Mettre à jour les champs
+            update_data = obj_in.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(db_obj, key, value)
+            
+            # Sauvegarder les changements
+            db.add(db_obj)
+            await db.flush()
+            await db.refresh(db_obj)
+            
+            # Retourner en utilisant le light_schema
+            return self.light_schema.from_orm(db_obj)
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur lors de la mise à jour de la permission: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erreur lors de la mise à jour de la permission"
+            )
+
+    async def delete(self, db: AsyncSession, id: int) -> str:
+        """Supprime une permission et retourne un message personnalisé."""
+        try:
+            db_obj = await self.get_or_404(db, id)
+            nom = db_obj.nom
+            await db.delete(db_obj)
+            await db.flush()
+            return f"Permission '{nom.value}' supprimée avec succès."
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur lors de la suppression de la permission: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erreur lors de la suppression de la permission"
+            )
+
+    async def create_all_permissions_and_roles(self, db: AsyncSession) -> str:
+        """Crée toutes les permissions, tous les rôles et affecte les permissions aux rôles de manière logique."""
+        from src.util.helper.enum import PermissionEnum, RoleEnum
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+        created_permissions = []
+        created_roles = []
+        assigned = []
+        
+        # 1. Créer toutes les permissions
+        for perm in PermissionEnum:
+            exists = await db.execute(select(PermissionModel).where(PermissionModel.nom == perm))
+            if not exists.scalars().first():
+                db_perm = PermissionModel(nom=perm)
+                db.add(db_perm)
+                created_permissions.append(perm.value)
+        
+        # 2. Créer tous les rôles
+        for role in RoleEnum:
+            exists = await db.execute(select(RoleModel).where(RoleModel.nom == role))
+            if not exists.scalars().first():
+                db_role = RoleModel(nom=role)
+                db.add(db_role)
+                created_roles.append(role.value)
+        
+        await db.flush()
+        
+        # 3. Récupérer les objets créés avec leurs permissions chargées
+        roles_result = await db.execute(
+            select(RoleModel).options(selectinload(RoleModel.permissions))
+        )
+        roles = {r.nom: r for r in roles_result.scalars().all()}
+        permissions_result = await db.execute(select(PermissionModel))
+        permissions = {p.nom: p for p in permissions_result.scalars().all()}
+        
+        # 4. Affecter les permissions aux rôles de manière logique
+        role_permissions = {
+            RoleEnum.ADMIN: [
+                # Toutes les permissions système
+                PermissionEnum.LIRE_UTILISATEUR, PermissionEnum.MODIFIER_UTILISATEUR,
+                PermissionEnum.CREER_UTILISATEUR, PermissionEnum.SUPPRIMER_UTILISATEUR,
+                PermissionEnum.REINITIALISER_MOT_DE_PASSE, PermissionEnum.CHANGER_MOT_DE_PASSE,
+                PermissionEnum.LIRE_PERMISSION, PermissionEnum.MODIFIER_PERMISSION,
+                PermissionEnum.CREER_PERMISSION, PermissionEnum.SUPPRIMER_PERMISSION,
+                PermissionEnum.LIRE_ROLE, PermissionEnum.MODIFIER_ROLE,
+                PermissionEnum.CREER_ROLE, PermissionEnum.SUPPRIMER_ROLE,
+                # Toutes les permissions métier
+                PermissionEnum.LIRE_FORMATION, PermissionEnum.MODIFIER_FORMATION,
+                PermissionEnum.CREER_FORMATION, PermissionEnum.SUPPRIMER_FORMATION,
+                PermissionEnum.LIRE_INSCRIPTION, PermissionEnum.MODIFIER_INSCRIPTION,
+                PermissionEnum.CREER_INSCRIPTION, PermissionEnum.SUPPRIMER_INSCRIPTION,
+                PermissionEnum.LIRE_PAIEMENT, PermissionEnum.MODIFIER_PAIEMENT,
+                PermissionEnum.CREER_PAIEMENT, PermissionEnum.SUPPRIMER_PAIEMENT,
+                PermissionEnum.LIRE_MODULE, PermissionEnum.MODIFIER_MODULE,
+                PermissionEnum.CREER_MODULE, PermissionEnum.SUPPRIMER_MODULE,
+                PermissionEnum.LIRE_RESSOURCE, PermissionEnum.MODIFIER_RESSOURCE,
+                PermissionEnum.CREER_RESSOURCE, PermissionEnum.SUPPRIMER_RESSOURCE,
+                PermissionEnum.LIRE_CHEF_D_OEUVRE, PermissionEnum.MODIFIER_CHEF_D_OEUVRE,
+                PermissionEnum.CREER_CHEF_D_OEUVRE, PermissionEnum.SUPPRIMER_CHEF_D_OEUVRE,
+                PermissionEnum.LIRE_PROJET_COLLECTIF, PermissionEnum.MODIFIER_PROJET_COLLECTIF,
+                PermissionEnum.CREER_PROJET_COLLECTIF, PermissionEnum.SUPPRIMER_PROJET_COLLECTIF,
+                PermissionEnum.LIRE_EVALUATION, PermissionEnum.MODIFIER_EVALUATION,
+                PermissionEnum.CREER_EVALUATION, PermissionEnum.SUPPRIMER_EVALUATION,
+                PermissionEnum.LIRE_QUESTION, PermissionEnum.MODIFIER_QUESTION,
+                PermissionEnum.CREER_QUESTION, PermissionEnum.SUPPRIMER_QUESTION,
+                PermissionEnum.LIRE_PROPOSITION, PermissionEnum.MODIFIER_PROPOSITION,
+                PermissionEnum.CREER_PROPOSITION, PermissionEnum.SUPPRIMER_PROPOSITION,
+                PermissionEnum.LIRE_RESULTAT_EVALUATION, PermissionEnum.MODIFIER_RESULTAT_EVALUATION,
+                PermissionEnum.CREER_RESULTAT_EVALUATION, PermissionEnum.SUPPRIMER_RESULTAT_EVALUATION,
+                PermissionEnum.LIRE_GENOTYPE, PermissionEnum.MODIFIER_GENOTYPE,
+                PermissionEnum.CREER_GENOTYPE, PermissionEnum.SUPPRIMER_GENOTYPE,
+                PermissionEnum.LIRE_ASCENDANCE_GENOTYPE, PermissionEnum.MODIFIER_ASCENDANCE_GENOTYPE,
+                PermissionEnum.CREER_ASCENDANCE_GENOTYPE, PermissionEnum.SUPPRIMER_ASCENDANCE_GENOTYPE,
+                PermissionEnum.LIRE_SANTE_GENOTYPE, PermissionEnum.MODIFIER_SANTE_GENOTYPE,
+                PermissionEnum.CREER_SANTE_GENOTYPE, PermissionEnum.SUPPRIMER_SANTE_GENOTYPE,
+                PermissionEnum.LIRE_EDUCATION_GENOTYPE, PermissionEnum.MODIFIER_EDUCATION_GENOTYPE,
+                PermissionEnum.CREER_EDUCATION_GENOTYPE, PermissionEnum.SUPPRIMER_EDUCATION_GENOTYPE,
+                PermissionEnum.LIRE_PLAN_INTERVENTION, PermissionEnum.MODIFIER_PLAN_INTERVENTION,
+                PermissionEnum.CREER_PLAN_INTERVENTION, PermissionEnum.SUPPRIMER_PLAN_INTERVENTION,
+                PermissionEnum.LIRE_ACCREDITATION, PermissionEnum.MODIFIER_ACCREDITATION,
+                PermissionEnum.CREER_ACCREDITATION, PermissionEnum.SUPPRIMER_ACCREDITATION,
+                PermissionEnum.LIRE_ACTUALITE, PermissionEnum.MODIFIER_ACTUALITE,
+                PermissionEnum.CREER_ACTUALITE, PermissionEnum.SUPPRIMER_ACTUALITE,
+                PermissionEnum.LIRE_FICHIER, PermissionEnum.TELEVERSER_FICHIER,
+                PermissionEnum.SUPPRIMER_FICHIER
+            ],
+            
+            RoleEnum.COORDONNATEUR: [
+                # Gestion des utilisateurs (sauf suppression)
+                PermissionEnum.LIRE_UTILISATEUR, PermissionEnum.MODIFIER_UTILISATEUR,
+                PermissionEnum.CREER_UTILISATEUR, PermissionEnum.REINITIALISER_MOT_DE_PASSE,
+                PermissionEnum.CHANGER_MOT_DE_PASSE,
+                # Gestion des formations et contenus
+                PermissionEnum.LIRE_FORMATION, PermissionEnum.MODIFIER_FORMATION,
+                PermissionEnum.CREER_FORMATION,
+                PermissionEnum.LIRE_INSCRIPTION, PermissionEnum.MODIFIER_INSCRIPTION,
+                PermissionEnum.CREER_INSCRIPTION,
+                PermissionEnum.LIRE_PAIEMENT, PermissionEnum.MODIFIER_PAIEMENT,
+                PermissionEnum.CREER_PAIEMENT,
+                PermissionEnum.LIRE_MODULE, PermissionEnum.MODIFIER_MODULE,
+                PermissionEnum.CREER_MODULE,
+                PermissionEnum.LIRE_RESSOURCE, PermissionEnum.MODIFIER_RESSOURCE,
+                PermissionEnum.CREER_RESSOURCE,
+                PermissionEnum.LIRE_CHEF_D_OEUVRE, PermissionEnum.MODIFIER_CHEF_D_OEUVRE,
+                PermissionEnum.CREER_CHEF_D_OEUVRE,
+                PermissionEnum.LIRE_PROJET_COLLECTIF, PermissionEnum.MODIFIER_PROJET_COLLECTIF,
+                PermissionEnum.CREER_PROJET_COLLECTIF,
+                PermissionEnum.LIRE_EVALUATION, PermissionEnum.MODIFIER_EVALUATION,
+                PermissionEnum.CREER_EVALUATION,
+                PermissionEnum.LIRE_QUESTION, PermissionEnum.MODIFIER_QUESTION,
+                PermissionEnum.CREER_QUESTION,
+                PermissionEnum.LIRE_PROPOSITION, PermissionEnum.MODIFIER_PROPOSITION,
+                PermissionEnum.CREER_PROPOSITION,
+                PermissionEnum.LIRE_RESULTAT_EVALUATION, PermissionEnum.MODIFIER_RESULTAT_EVALUATION,
+                PermissionEnum.CREER_RESULTAT_EVALUATION,
+                # Génotypes et plans d'intervention
+                PermissionEnum.LIRE_GENOTYPE, PermissionEnum.MODIFIER_GENOTYPE,
+                PermissionEnum.CREER_GENOTYPE,
+                PermissionEnum.LIRE_ASCENDANCE_GENOTYPE, PermissionEnum.MODIFIER_ASCENDANCE_GENOTYPE,
+                PermissionEnum.CREER_ASCENDANCE_GENOTYPE,
+                PermissionEnum.LIRE_SANTE_GENOTYPE, PermissionEnum.MODIFIER_SANTE_GENOTYPE,
+                PermissionEnum.CREER_SANTE_GENOTYPE,
+                PermissionEnum.LIRE_EDUCATION_GENOTYPE, PermissionEnum.MODIFIER_EDUCATION_GENOTYPE,
+                PermissionEnum.CREER_EDUCATION_GENOTYPE,
+                PermissionEnum.LIRE_PLAN_INTERVENTION, PermissionEnum.MODIFIER_PLAN_INTERVENTION,
+                PermissionEnum.CREER_PLAN_INTERVENTION,
+                # Accréditations et actualités
+                PermissionEnum.LIRE_ACCREDITATION, PermissionEnum.MODIFIER_ACCREDITATION,
+                PermissionEnum.CREER_ACCREDITATION,
+                PermissionEnum.LIRE_ACTUALITE, PermissionEnum.MODIFIER_ACTUALITE,
+                PermissionEnum.CREER_ACTUALITE,
+                # Fichiers
+                PermissionEnum.LIRE_FICHIER, PermissionEnum.TELEVERSER_FICHIER
+            ],
+            
+            RoleEnum.FORMATEUR: [
+                # Lecture des utilisateurs
+                PermissionEnum.LIRE_UTILISATEUR, PermissionEnum.CHANGER_MOT_DE_PASSE,
+                # Gestion des formations et contenus pédagogiques
+                PermissionEnum.LIRE_FORMATION, PermissionEnum.MODIFIER_FORMATION,
+                PermissionEnum.LIRE_INSCRIPTION, PermissionEnum.MODIFIER_INSCRIPTION,
+                PermissionEnum.LIRE_PAIEMENT,
+                PermissionEnum.LIRE_MODULE, PermissionEnum.MODIFIER_MODULE,
+                PermissionEnum.CREER_MODULE,
+                PermissionEnum.LIRE_RESSOURCE, PermissionEnum.MODIFIER_RESSOURCE,
+                PermissionEnum.CREER_RESSOURCE,
+                PermissionEnum.LIRE_CHEF_D_OEUVRE, PermissionEnum.MODIFIER_CHEF_D_OEUVRE,
+                PermissionEnum.CREER_CHEF_D_OEUVRE,
+                PermissionEnum.LIRE_PROJET_COLLECTIF, PermissionEnum.MODIFIER_PROJET_COLLECTIF,
+                PermissionEnum.CREER_PROJET_COLLECTIF,
+                PermissionEnum.LIRE_EVALUATION, PermissionEnum.MODIFIER_EVALUATION,
+                PermissionEnum.CREER_EVALUATION,
+                PermissionEnum.LIRE_QUESTION, PermissionEnum.MODIFIER_QUESTION,
+                PermissionEnum.CREER_QUESTION,
+                PermissionEnum.LIRE_PROPOSITION, PermissionEnum.MODIFIER_PROPOSITION,
+                PermissionEnum.CREER_PROPOSITION,
+                PermissionEnum.LIRE_RESULTAT_EVALUATION, PermissionEnum.MODIFIER_RESULTAT_EVALUATION,
+                PermissionEnum.CREER_RESULTAT_EVALUATION,
+                # Génotypes et plans d'intervention
+                PermissionEnum.LIRE_GENOTYPE, PermissionEnum.MODIFIER_GENOTYPE,
+                PermissionEnum.CREER_GENOTYPE,
+                PermissionEnum.LIRE_ASCENDANCE_GENOTYPE, PermissionEnum.MODIFIER_ASCENDANCE_GENOTYPE,
+                PermissionEnum.CREER_ASCENDANCE_GENOTYPE,
+                PermissionEnum.LIRE_SANTE_GENOTYPE, PermissionEnum.MODIFIER_SANTE_GENOTYPE,
+                PermissionEnum.CREER_SANTE_GENOTYPE,
+                PermissionEnum.LIRE_EDUCATION_GENOTYPE, PermissionEnum.MODIFIER_EDUCATION_GENOTYPE,
+                PermissionEnum.CREER_EDUCATION_GENOTYPE,
+                PermissionEnum.LIRE_PLAN_INTERVENTION, PermissionEnum.MODIFIER_PLAN_INTERVENTION,
+                PermissionEnum.CREER_PLAN_INTERVENTION,
+                # Fichiers
+                PermissionEnum.LIRE_FICHIER, PermissionEnum.TELEVERSER_FICHIER
+            ],
+            
+            RoleEnum.REFERENT: [
+                # Lecture des utilisateurs
+                PermissionEnum.LIRE_UTILISATEUR, PermissionEnum.CHANGER_MOT_DE_PASSE,
+                # Gestion des formations et contenus pédagogiques
+                PermissionEnum.LIRE_FORMATION, PermissionEnum.MODIFIER_FORMATION,
+                PermissionEnum.LIRE_INSCRIPTION, PermissionEnum.MODIFIER_INSCRIPTION,
+                PermissionEnum.LIRE_PAIEMENT,
+                PermissionEnum.LIRE_MODULE, PermissionEnum.MODIFIER_MODULE,
+                PermissionEnum.CREER_MODULE,
+                PermissionEnum.LIRE_RESSOURCE, PermissionEnum.MODIFIER_RESSOURCE,
+                PermissionEnum.CREER_RESSOURCE,
+                PermissionEnum.LIRE_CHEF_D_OEUVRE, PermissionEnum.MODIFIER_CHEF_D_OEUVRE,
+                PermissionEnum.CREER_CHEF_D_OEUVRE,
+                PermissionEnum.LIRE_PROJET_COLLECTIF, PermissionEnum.MODIFIER_PROJET_COLLECTIF,
+                PermissionEnum.CREER_PROJET_COLLECTIF,
+                PermissionEnum.LIRE_EVALUATION, PermissionEnum.MODIFIER_EVALUATION,
+                PermissionEnum.CREER_EVALUATION,
+                PermissionEnum.LIRE_QUESTION, PermissionEnum.MODIFIER_QUESTION,
+                PermissionEnum.CREER_QUESTION,
+                PermissionEnum.LIRE_PROPOSITION, PermissionEnum.MODIFIER_PROPOSITION,
+                PermissionEnum.CREER_PROPOSITION,
+                PermissionEnum.LIRE_RESULTAT_EVALUATION, PermissionEnum.MODIFIER_RESULTAT_EVALUATION,
+                PermissionEnum.CREER_RESULTAT_EVALUATION,
+                # Génotypes et plans d'intervention
+                PermissionEnum.LIRE_GENOTYPE, PermissionEnum.MODIFIER_GENOTYPE,
+                PermissionEnum.CREER_GENOTYPE,
+                PermissionEnum.LIRE_ASCENDANCE_GENOTYPE, PermissionEnum.MODIFIER_ASCENDANCE_GENOTYPE,
+                PermissionEnum.CREER_ASCENDANCE_GENOTYPE,
+                PermissionEnum.LIRE_SANTE_GENOTYPE, PermissionEnum.MODIFIER_SANTE_GENOTYPE,
+                PermissionEnum.CREER_SANTE_GENOTYPE,
+                PermissionEnum.LIRE_EDUCATION_GENOTYPE, PermissionEnum.MODIFIER_EDUCATION_GENOTYPE,
+                PermissionEnum.CREER_EDUCATION_GENOTYPE,
+                PermissionEnum.LIRE_PLAN_INTERVENTION, PermissionEnum.MODIFIER_PLAN_INTERVENTION,
+                PermissionEnum.CREER_PLAN_INTERVENTION,
+                # Fichiers
+                PermissionEnum.LIRE_FICHIER, PermissionEnum.TELEVERSER_FICHIER
+            ],
+            
+            RoleEnum.APPRENANT: [
+                # Lecture de son propre profil
+                PermissionEnum.LIRE_UTILISATEUR, PermissionEnum.CHANGER_MOT_DE_PASSE,
+                # Lecture des formations et contenus
+                PermissionEnum.LIRE_FORMATION,
+                PermissionEnum.LIRE_INSCRIPTION,
+                PermissionEnum.LIRE_PAIEMENT,
+                PermissionEnum.LIRE_MODULE,
+                PermissionEnum.LIRE_RESSOURCE,
+                # Gestion de ses propres chefs-d'œuvre
+                PermissionEnum.LIRE_CHEF_D_OEUVRE, PermissionEnum.MODIFIER_CHEF_D_OEUVRE,
+                PermissionEnum.CREER_CHEF_D_OEUVRE,
+                # Gestion de ses propres projets collectifs
+                PermissionEnum.LIRE_PROJET_COLLECTIF, PermissionEnum.MODIFIER_PROJET_COLLECTIF,
+                PermissionEnum.CREER_PROJET_COLLECTIF,
+                # Lecture des évaluations et questions
+                PermissionEnum.LIRE_EVALUATION,
+                PermissionEnum.LIRE_QUESTION,
+                PermissionEnum.LIRE_PROPOSITION,
+                # Gestion de ses propres résultats d'évaluation
+                PermissionEnum.LIRE_RESULTAT_EVALUATION, PermissionEnum.MODIFIER_RESULTAT_EVALUATION,
+                PermissionEnum.CREER_RESULTAT_EVALUATION,
+                # Génotypes et plans d'intervention (lecture seulement)
+                PermissionEnum.LIRE_GENOTYPE,
+                PermissionEnum.LIRE_ASCENDANCE_GENOTYPE,
+                PermissionEnum.LIRE_SANTE_GENOTYPE,
+                PermissionEnum.LIRE_EDUCATION_GENOTYPE,
+                PermissionEnum.LIRE_PLAN_INTERVENTION,
+                # Lecture des actualités
+                PermissionEnum.LIRE_ACTUALITE,
+                # Fichiers (lecture seulement)
+                PermissionEnum.LIRE_FICHIER
+            ]
+        }
+        
+        # 5. Appliquer les affectations sans lazy load
+        for role_enum, perm_list in role_permissions.items():
+            if role_enum in roles:
+                role_obj = roles[role_enum]
+                role_obj.permissions.clear()
+                role_obj.permissions.extend([permissions[perm] for perm in perm_list if perm in permissions])
+                assigned.append(f"{role_enum.value}: {len(role_obj.permissions)} permissions")
+        
+        await db.flush()
+        
+        return (
+            f"✅ Permissions créées: {len(created_permissions)}\n"
+            f"✅ Rôles créés: {len(created_roles)}\n"
+            f"✅ Affectations appliquées:\n" + "\n".join(f"  - {a}" for a in assigned)
+        )
 
 # ============================================================================
 # ========================= SERVICE DES RÔLES ================================
@@ -470,7 +822,20 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
         """Assigne plusieurs permissions à un rôle sans doublons."""
         async with db.begin():
             try:
-                db_role = await self.get_or_404(db, role_id)
+                # Charger le rôle avec ses permissions pour éviter l'erreur MissingGreenlet
+                from sqlalchemy.orm import selectinload
+                result = await db.execute(
+                    select(RoleModel)
+                    .options(selectinload(RoleModel.permissions))
+                    .where(RoleModel.id == role_id)
+                )
+                db_role = result.scalars().first()
+                if not db_role:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Rôle avec ID {role_id} non trouvé"
+                    )
+                
                 existing_permission_ids = {p.id for p in db_role.permissions}
                 permissions_to_add = set(permission_ids) - existing_permission_ids
                 
@@ -504,7 +869,20 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
         """Révoque plusieurs permissions d'un rôle."""
         async with db.begin():
             try:
-                db_role = await self.get_or_404(db, role_id)
+                # Charger le rôle avec ses permissions pour éviter l'erreur MissingGreenlet
+                from sqlalchemy.orm import selectinload
+                result = await db.execute(
+                    select(RoleModel)
+                    .options(selectinload(RoleModel.permissions))
+                    .where(RoleModel.id == role_id)
+                )
+                db_role = result.scalars().first()
+                if not db_role:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Rôle avec ID {role_id} non trouvé"
+                    )
+                
                 existing_permission_ids = {p.id for p in db_role.permissions}
                 permissions_to_remove = set(permission_ids) & existing_permission_ids
                 
@@ -579,6 +957,22 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
             UtilisateurModel.resultats_evaluations
         ])
 
+    async def change_user_status(self, db: AsyncSession, user_id: int, statut: StatutCompteEnum) -> UtilisateurLight:
+        """Change le statut d'un utilisateur."""
+        async with db.begin():
+            try:
+                db_obj = await self.get_or_404(db, user_id)
+                db_obj.statut = statut
+                await db.flush()
+                await db.refresh(db_obj)
+                return UtilisateurLight.from_orm(db_obj)
+            except SQLAlchemyError as e:
+                logger.error(f"Erreur lors du changement de statut de l'utilisateur: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Erreur lors du changement de statut de l'utilisateur"
+                )
+            
     async def update(self, db: AsyncSession, id: int, obj_in: UtilisateurUpdate) -> UtilisateurLight:
         """Met à jour un utilisateur avec validation."""
         async with db.begin():

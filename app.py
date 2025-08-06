@@ -1,1 +1,0 @@
-from src.main import app  # importe ta FastAPI

@@ -5,11 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import time
 import os
-<<<<<<< HEAD
 
 # Supposons que router est défini dans src/api/router.py
-=======
->>>>>>> 2742ea655259ddd3fa543bc41d005301aa8640d9
 from src.api.router import router
 from src.util.database.database import init_db, close_db
 from src.util.helper.logger import log_error, log_info
@@ -68,13 +65,18 @@ async def log_requests(request: Request, call_next):
 
 app.include_router(router)
 
-if os.path.exists("src/static"):
-    app.mount("/static", StaticFiles(directory="src/static"), name="static")
+# Configuration des fichiers statiques pour correspondre aux chemins d'upload
+static_dirs = [
+    ("/static/documents", "static/documents"),
+    ("/static/images", "static/images"),
+    ("/static/audios", "static/audios"),
+    ("/static/videos", "static/videos")
+]
+
+for url_path, disk_path in static_dirs:
+    if os.path.exists(disk_path):
+        app.mount(url_path, StaticFiles(directory=disk_path), name=f"static_{url_path.replace('/', '_')}")
 
 @app.get("/")
 async def root():
-<<<<<<< HEAD
     return {"message": "Welcome to the Education Management API"}
-=======
-    return {"message": "Welcome to the Education Management API"}
->>>>>>> 2742ea655259ddd3fa543bc41d005301aa8640d9

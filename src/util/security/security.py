@@ -84,7 +84,6 @@ def has_permission(user: UtilisateurLight, required_permissions: List[str]) -> b
     required_permission_set = set(required_permissions)
     return required_permission_set.issubset(user_permission_names)
 
-<<<<<<< HEAD
 def require_permissions(required_permissions: List[str]):
     """Factory FastAPI pour vérifier les permissions requises."""
     async def dependency(current_user: UtilisateurLight = Depends(get_current_active_user)) -> UtilisateurLight:
@@ -93,22 +92,10 @@ def require_permissions(required_permissions: List[str]):
             logger.warning(
                 f"Utilisateur {current_user.email} n'a pas les permissions requises: {missing_permissions}"
             )
-=======
-async def require_permissions(required_permissions: List[str]):
-    """Dépendance FastAPI pour vérifier les permissions requises."""
-    async def dependency(current_user: UtilisateurLight = Depends(get_current_active_user)) -> UtilisateurLight:
-        if not has_permission(current_user, required_permissions):
-            missing_permissions = set(required_permissions) - {perm.nom.value for perm in current_user.permissions}
-            logger.warning(f"Utilisateur {current_user.email} n'a pas les permissions requises: {missing_permissions}")
->>>>>>> 2742ea655259ddd3fa543bc41d005301aa8640d9
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Permissions manquantes: {', '.join(missing_permissions)}"
             )
         return current_user
-<<<<<<< HEAD
 
     return dependency
-=======
-    return dependency
->>>>>>> 2742ea655259ddd3fa543bc41d005301aa8640d9

@@ -195,7 +195,7 @@ class Role(BaseModel):
     id: int
     nom: RoleEnum
     permissions: List[PermissionLight] = []
-    utilisateurs: List[UtilisateurLight] = []
+
     class Config:
         from_attributes = True
 
