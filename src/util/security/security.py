@@ -4,7 +4,7 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 import logging
 
@@ -32,7 +32,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
         if user_id is None:
             logger.warning("Token JWT sans 'sub' (ID utilisateur)")
             raise credentials_exception
-        if payload.get("exp") < datetime.utcnow().timestamp():
+        if payload.get("exp") < datetime.now(timezone.utc).timestamp():
             logger.warning(f"Token JWT expiré pour l'utilisateur ID: {user_id}")
             raise credentials_exception
     except JWTError as e:

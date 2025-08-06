@@ -32,7 +32,8 @@ from src.api.schema import (
     EducationGenotype, EducationGenotypeLight, EducationGenotypeCreate, EducationGenotypeUpdate,
     PlanInterventionIndividualise, PlanInterventionIndividualiseLight, PlanInterventionIndividualiseCreate, PlanInterventionIndividualiseUpdate,
     Accreditation, AccreditationLight, AccreditationCreate, AccreditationUpdate,
-    Actualite, ActualiteLight, ActualiteCreate, ActualiteUpdate
+    Actualite, ActualiteLight, ActualiteCreate, ActualiteUpdate,
+    ResetPasswordRequestSchema, ChangePasswordSchema
 )
 from src.util.helper.enum import FileTypeEnum, StatutCompteEnum
 import logging
@@ -228,45 +229,99 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_async_db)):
     await utilisateur_service.delete(db, user_id)
 
 @router.post(
-    "/users/{user_id}/reset-password",
-    response_model=dict,
+    "/users/{user_id}/assign-permissions",
+    response_model=str,
     tags=["Utilisateurs"],
-    summary="Réinitialiser le mot de passe d'un utilisateur",
-    description="Génère un nouveau mot de passe pour un utilisateur spécifique et envoie un email de réinitialisation."
+    summary="Assigner des permissions à un utilisateur",
+    description="Assigne directement des permissions à un utilisateur spécifique, en plus de celles héritées de son rôle."
 )
-async def reset_password(user_id: int, db: AsyncSession = Depends(get_async_db)):
+async def assign_permissions_to_user(user_id: int, permission_ids: List[int], db: AsyncSession = Depends(get_async_db)):
     """
-    Réinitialise le mot de passe d'un utilisateur.
+    Assigne des permissions directement à un utilisateur.
 
-    - **user_id**: ID de l'utilisateur dont le mot de passe doit être réinitialisé.
+    Cette fonction permet d'assigner des permissions spécifiques à un utilisateur,
+    en plus de celles qu'il hérite de son rôle. Les permissions sont ajoutées
+    sans créer de doublons si elles existent déjà.
+
+    - **user_id**: ID de l'utilisateur à qui assigner les permissions.
+    - **permission_ids**: Liste des IDs des permissions à assigner.
     - **Réponses**:
-        - **200**: Mot de passe réinitialisé avec succès (ex. `{"message": "Mot de passe réinitialisé"}`).
+        - **200**: Permissions assignées avec succès (ex. `"Permissions create_user, read_user assignées avec succès à l'utilisateur John Doe"`).
+        - **400**: Aucune permission valide fournie.
         - **404**: Utilisateur non trouvé.
         - **500**: Erreur interne du serveur.
     """
-    await utilisateur_service.reset_password(db, user_id)
-    return {"message": "Mot de passe réinitialisé et envoyé par email."}
+    return await utilisateur_service.assign_permissions(db, user_id, permission_ids)
+
+@router.post(
+    "/users/{user_id}/revoke-permissions",
+    response_model=str,
+    tags=["Utilisateurs"],
+    summary="Révoquer des permissions d'un utilisateur",
+    description="Révoque directement des permissions d'un utilisateur spécifique, sans affecter celles héritées de son rôle."
+)
+async def revoke_permissions_from_user(user_id: int, permission_ids: List[int], db: AsyncSession = Depends(get_async_db)):
+    """
+    Révoque des permissions directement d'un utilisateur.
+
+    Cette fonction permet de révoquer des permissions spécifiques d'un utilisateur,
+    sans affecter celles qu'il hérite de son rôle. Seules les permissions
+    directement assignées à l'utilisateur sont révoquées.
+
+    - **user_id**: ID de l'utilisateur de qui révoquer les permissions.
+    - **permission_ids**: Liste des IDs des permissions à révoquer.
+    - **Réponses**:
+        - **200**: Permissions révoquées avec succès (ex. `"Permissions create_user, read_user révoquées avec succès de l'utilisateur John Doe"`).
+        - **400**: Aucune permission valide fournie.
+        - **404**: Utilisateur non trouvé.
+        - **500**: Erreur interne du serveur.
+    """
+    return await utilisateur_service.revoke_permissions(db, user_id, permission_ids)
+
 
 @router.post(
     "/users/change-password",
     response_model=dict,
     tags=["Utilisateurs"],
-    summary="Changer le mot de passe de l'utilisateur connecté",
-    description="Permet à l'utilisateur connecté de changer son mot de passe."
+    summary="Changer le mot de passe d'un utilisateur",
+    description="Permet de changer le mot de passe d'un utilisateur via son id, son mot de passe actuel et le nouveau."
 )
-async def change_password(token: str, old_password: str, new_password: str, db: AsyncSession = Depends(get_async_db)):
+async def change_password(body: ChangePasswordSchema, db: AsyncSession = Depends(get_async_db)):
     """
-    Change le mot de passe de l'utilisateur connecté.
+    Change le mot de passe d'un utilisateur.
 
-    - **token**: Token JWT de l'utilisateur.
-    - **old_password**: Ancien mot de passe.
-    - **new_password**: Nouveau mot de passe.
+    - **utilisateur_id**: ID de l'utilisateur
+    - **current_password**: Mot de passe actuel
+    - **new_password**: Nouveau mot de passe
     - **Réponses**:
         - **200**: Mot de passe changé avec succès (ex. `{"message": "Mot de passe changé avec succès"}`).
-        - **401**: Ancien mot de passe incorrect ou token invalide.
+        - **401**: Mot de passe actuel incorrect.
         - **500**: Erreur interne du serveur.
     """
-    return await utilisateur_service.change_password(db, token, old_password, new_password)
+    msg = await utilisateur_service.change_password(db, body.utilisateur_id, body.current_password, body.new_password)
+    return {"message": msg}
+
+@router.post(
+    "/reset-password-request",
+    response_model=dict,
+    tags=["Utilisateurs"],
+    summary="Demander la réinitialisation du mot de passe",
+    description="Envoie un email avec un lien de réinitialisation de mot de passe si l'email existe."
+)
+async def reset_password_request(request: Request, body: ResetPasswordRequestSchema, db: AsyncSession = Depends(get_async_db)):
+    await utilisateur_service.send_reset_link(db, body.email, request)
+    return {"message": "Si l'email existe, un lien de réinitialisation a été envoyé."}
+
+@router.get(
+    "/reset-password-confirm",
+    response_model=dict,
+    tags=["Utilisateurs"],
+    summary="Confirmer la réinitialisation du mot de passe",
+    description="Valide le token, génère un nouveau mot de passe, l'envoie par email, et invalide le token."
+)
+async def reset_password_confirm(token: str, db: AsyncSession = Depends(get_async_db)):
+    await utilisateur_service.confirm_reset_password(db, token)
+    return {"message": "Votre mot de passe a été réinitialisé et envoyé par email."}
 
 # ============================================================================
 # ========================= ROUTES DES PERMISSIONS ===========================

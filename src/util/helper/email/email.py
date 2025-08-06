@@ -247,6 +247,8 @@ class EmailService:
         
         """
         return text_body, html_body
+    
+    
 
     async def send_otp_email(self, email: str, otp_code: str, language: str = "fr"):
         """Envoie un email avec un code OTP pour l'authentification.

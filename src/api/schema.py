@@ -729,12 +729,12 @@ class UtilisateurUpdate(BaseModel):
     prenom: Optional[str] = Field(None, max_length=255)
     sexe: Optional[SexeEnum] = None
     email: Optional[str] = Field(None, max_length=255)
-    password: Optional[str] = Field(None, max_length=128)
-    statut: Optional[StatutCompteEnum] = None
-    est_actif: Optional[bool] = None
+    # password: Optional[str] = Field(None, max_length=128)
+    # statut: Optional[StatutCompteEnum] = None
+    # est_actif: Optional[bool] = None
     date_naissance: Optional[date] = None
-    role_id: Optional[int] = None
-    permission_ids: Optional[List[int]] = None
+    # role_id: Optional[int] = None
+    # permission_ids: Optional[List[int]] = None
     class Config:
         from_attributes = True
 
@@ -946,3 +946,11 @@ class ActualiteUpdate(BaseModel):
     utilisateur_id: Optional[int] = None
     class Config:
         from_attributes = True
+
+class ResetPasswordRequestSchema(BaseModel):
+    email: str
+    
+class ChangePasswordSchema(BaseModel):
+    utilisateur_id: int
+    current_password: str
+    new_password: str

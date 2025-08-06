@@ -16,4 +16,4 @@ src/static/
 *.tmp
 
 # Local env config
-# .env
+.env
