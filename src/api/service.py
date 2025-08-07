@@ -296,27 +296,30 @@ class FileService:
             try:
                 if not storage_path.exists():
                     storage_path.mkdir(parents=True, exist_ok=True)
-                    if os.name != "nt":
-                        try:
-                            os.chmod(storage_path, 0o755)
-                        except PermissionError as e:
-                            logger.warning(f"Impossible de changer les permissions pour {storage_path}: {e}")
-                logger.info(f"Répertoire {storage_path} créé ou vérifié pour {file_type.value}.")
-            except PermissionError as e:
-                if storage_path.exists():
-                    logger.info(f"Le répertoire {storage_path} existe déjà, poursuite de l'exécution.")
+                    logger.info(f"Répertoire {storage_path} créé pour {file_type.value}.")
                 else:
-                    logger.error(f"Erreur création répertoire {storage_path} pour {file_type.value}: {e}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Erreur création répertoire {storage_path} pour {file_type.value}"
-                    )
+                    logger.info(f"Répertoire {storage_path} existe déjà pour {file_type.value}.")
+
+                # Essayer de définir les permissions, mais ne pas échouer si impossible
+                if os.name != "nt":
+                    try:
+                        os.chmod(storage_path, 0o755)
+                        logger.debug(f"Permissions 755 appliquées à {storage_path}")
+                    except PermissionError as e:
+                        logger.warning(f"Impossible de changer les permissions pour {storage_path}: {e}")
+
+            except PermissionError as e:
+                # Si le répertoire existe déjà, continuer sans erreur
+                if storage_path.exists():
+                    logger.warning(f"Le répertoire {storage_path} existe mais permissions insuffisantes pour le modifier: {e}")
+                else:
+                    # Si on ne peut pas créer le répertoire, log l'erreur mais ne pas faire planter l'app
+                    logger.error(f"Impossible de créer le répertoire {storage_path} pour {file_type.value}: {e}")
+                    logger.warning(f"L'upload de fichiers {file_type.value} pourrait ne pas fonctionner correctement.")
+
             except Exception as e:
-                logger.error(f"Erreur création répertoire {storage_path} pour {file_type.value}: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Erreur création répertoire {storage_path} pour {file_type.value}"
-                )
+                logger.error(f"Erreur inattendue lors de la création du répertoire {storage_path} pour {file_type.value}: {e}")
+                logger.warning(f"L'upload de fichiers {file_type.value} pourrait ne pas fonctionner correctement.")
 
     def _validate_file(self, file: UploadFile, file_type: FileTypeEnum) -> None:
         """Valide le type et la taille d'un fichier."""

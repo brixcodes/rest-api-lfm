@@ -74,8 +74,19 @@ static_dirs = [
 ]
 
 for url_path, disk_path in static_dirs:
-    if os.path.exists(disk_path):
+    try:
+        # Créer le répertoire s'il n'existe pas
+        os.makedirs(disk_path, exist_ok=True)
         app.mount(url_path, StaticFiles(directory=disk_path), name=f"static_{url_path.replace('/', '_')}")
+        log_info(f"✅ Répertoire statique monté: {url_path} -> {disk_path}")
+    except PermissionError as e:
+        log_error(f"❌ Impossible de créer le répertoire {disk_path}: {e}")
+        # Monter quand même si le répertoire existe
+        if os.path.exists(disk_path):
+            app.mount(url_path, StaticFiles(directory=disk_path), name=f"static_{url_path.replace('/', '_')}")
+            log_info(f"⚠️ Répertoire statique monté (existant): {url_path} -> {disk_path}")
+    except Exception as e:
+        log_error(f"❌ Erreur lors de la configuration du répertoire statique {disk_path}: {e}")
 
 @app.get("/")
 async def root():
