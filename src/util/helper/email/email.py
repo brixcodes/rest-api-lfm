@@ -132,98 +132,102 @@ class EmailService:
             text_body = f"{greeting}\n\n{content}\n\nCordialement,\nL'équipe {team.capitalize()}\n\n---\nSi vous avez des questions, contactez-nous à {settings.GMAIL_EMAIL}."
             contact_link = f'<a href="mailto:{settings.GMAIL_EMAIL}">{settings.GMAIL_EMAIL}</a>'
             signature = f"Cordialement, L'équipe {team.capitalize()}"
-        
-        html_body = f"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
-        <head>
-            <!--[if gte mso 9]>
-            <xml>
-                <o:OfficeDocumentSettings>
-                    <o:AllowPNG/>
-                    <o:PixelsPerInch>96</o:PixelsPerInch>
-                </o:OfficeDocumentSettings>
+
+        html_body = """<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+    <head>
+        <!--[if gte mso 9]>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:AllowPNG/>
+                <o:PixelsPerInch>96</o:OfficeDocumentSettings>
             </xml>
-            <![endif]-->
-            <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-            <meta name="format-detection" content="telephone=no" />
-            <meta name="x-apple-disable-message-reformatting" />
-            <link href="https://fonts.googleapis.com/css?family=PT+Serif:400,400i,700,700i|Poppins:400,400i,700,700i" rel="stylesheet" />
-            <title>{title}</title>
-            <style type="text/css">
-                body {{ padding: 0 !important; margin: 0 !important; display: block !important; min-width: 100% !important; width: 100% !important; background: #ffffff; -webkit-text-size-adjust: none; }}
-                .h3 {{ color: #000000; font-family: Arial, sans-serif; font-size: 22px; line-height: 32px; text-align: center; padding-bottom: 15px; }}
-                .text {{ color: #666666; font-family: Arial, sans-serif; font-size: 15px; line-height: 28px; text-align: center; padding-bottom: 15px; }}
-                .text-footer2 {{ color: #777777; font-family: Arial, sans-serif; font-size: 12px; line-height: 26px; text-align: center; padding-bottom: 20px; }}
-            </style>
-        </head>
-        <body class="body">
-            <span class="mcnPreviewText" style="display: none; font-size: 0px; line-height: 0px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden; visibility: hidden; mso-hide: all;">*|MC_PREVIEW_TEXT|*</span>
-            <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#ffffff">
-                <tr>
-                    <td align="center" valign="top">
-                        <table width="650" border="0" cellspacing="0" cellpadding="0" class="mobile-shell">
-                            <tr>
-                                <td class="td" style="width: 650px; min-width: 650px; font-size: 0pt; line-height: 0pt; padding: 0; margin: 0; font-weight: normal;">
+        <![endif]-->
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="x-apple-disable-message-reformatting" />
+        <link href="https://fonts.googleapis.com/css?family=PT+Serif:400,400i,700,700i|Poppins:400,400i,700,700i" rel="stylesheet" />
+        <title>{title}</title>
+        <style type="text/css">
+            body {{ padding: 0 !important; margin: 0 !important; display: block !important; min-width: 100% !important; width: 100% !important; background: #ffffff; -webkit-text-size-adjust: none; }}
+            .h3 {{ color: #000000; font-family: Arial, sans-serif; font-size: 22px; line-height: 32px; text-align: center; padding-bottom: 15px; }}
+            .text {{ color: #666666; font-family: Arial, sans-serif; font-size: 15px; line-height: 28px; text-align: center; padding-bottom: 15px; }}
+            .text-footer2 {{ color: #777777; font-family: Arial, sans-serif; font-size: 12px; line-height: 26px; text-align: center; padding-bottom: 20px; }}
+        </style>
+    </head>
+    <body class="body">
+        <span class="mcnPreviewText" style="display: none; font-size: 0px; line-height: 0px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden; visibility: hidden; mso-hide: all;">*|MC_PREVIEW_TEXT|*</span>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#ffffff">
+            <tr>
+                <td align="center" valign="top">
+                    <table width="650" border="0" cellspacing="0" cellpadding="0" class="mobile-shell">
+                        <tr>
+                            <td class="td" style="width: 650px; min-width: 650px; font-size: 0pt; line-height: 0pt; padding: 0; margin: 0; font-weight: normal;">
+                                <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                                    <tr>
+                                        <td class="p30-15 tbrr" style="padding: 30px 0px 40px 0px; border-radius: 12px 12px 0px 0px;">
+                                            <table width="100%" border="0" cellspacing="0" cellpadding="0"></table>
+                                        </td>
+                                    </tr>
+                                </table>
+                                <div mc:repeatable="Select" mc:variant="CTA">
                                     <table width="100%" border="0" cellspacing="0" cellpadding="0">
                                         <tr>
-                                            <td class="p30-15 tbrr" style="padding: 30px 0px 40px 0px; border-radius: 12px 12px 0px 0px;">
-                                                <table width="100%" border="0" cellspacing="0" cellpadding="0"></table>
-                                            </td>
-                                        </tr>
-                                    </table>
-                                    <div mc:repeatable="Select" mc:variant="CTA">
-                                        <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                                            <tr>
-                                                <td class="p30-15" style="padding: 60px 40px 60px 40px; background-color: #f4f4f4;">
-                                                    <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                                                        <tr>
-                                                            <td class="h3">
-                                                                <div mc:edit="text_11">
-                                                                    {greeting}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td class="text">
-                                                                <div mc:edit="text_12">
-                                                                    {content.replace('\n', '<br>')}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    </table>
-                                                </td>
-                                            </tr>
-                                            <tr>
-                                                <td class="pb40" style="padding-bottom: 40px;"></td>
-                                            </tr>
-                                        </table>
-                                    </div>
-                                    <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                                        <tr>
-                                            <td class="p0-15-30" style="padding-bottom: 40px;">
+                                            <td class="p30-15" style="padding: 60px 40px 60px 40px; background-color: #f4f4f4;">
                                                 <table width="100%" border="0" cellspacing="0" cellpadding="0">
                                                     <tr>
-                                                        <td class="text-footer2">
-                                                            <div mc:edit="text_30">
-                                                                <div class="footer">{signature}</div>
+                                                        <td class="h3">
+                                                            <div mc:edit="text_11">
+                                                                {greeting}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td class="text">
+                                                            <div mc:edit="text_12">
+                                                                {content}
                                                             </div>
                                                         </td>
                                                     </tr>
                                                 </table>
                                             </td>
                                         </tr>
+                                        <tr>
+                                            <td class="pb40" style="padding-bottom: 40px;"></td>
+                                        </tr>
                                     </table>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
+                                </div>
+                                <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                                    <tr>
+                                        <td class="p0-15-30" style="padding-bottom: 40px;">
+                                            <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                                                <tr>
+                                                    <td class="text-footer2">
+                                                        <div mc:edit="text_30">
+                                                            <div class="footer">{signature}</div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """.format(
+            title=title,
+            greeting=greeting,
+            content=content.replace('\n', '<br>'),
+            signature=signature
+        )
         return text_body, html_body
 
 
