@@ -36,11 +36,12 @@ COPY . .
 # Création du répertoire documents + permission
 RUN mkdir -p /app/static && chmod -R 777 /app/static
 
-RUN mkdir -p logs && chmod -R 777 logs
+RUN mkdir -p /app/logs && chmod -R 777 /app/logs
 
 
 # Préparation du fichier de log (si nécessaire)
-RUN touch /app/app.log && chown lafaom:lafaom /app/app.log
+RUN mkdir -p /app/logs && chown -R lafaom:lafaom /app/logs
+
 
 # Attribution des droits sur /app
 RUN chown -R lafaom:lafaom /app
