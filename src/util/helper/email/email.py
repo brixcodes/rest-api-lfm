@@ -133,115 +133,101 @@ class EmailService:
             contact_link = f'<a href="mailto:{settings.GMAIL_EMAIL}">{settings.GMAIL_EMAIL}</a>'
             signature = f"Cordialement, L'équipe {team.capitalize()}"
 
-        html_body = """<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
-    <head>
-        <!--[if gte mso 9]>
-        <xml>
-            <o:OfficeDocumentSettings>
-                <o:AllowPNG/>
-                <o:PixelsPerInch>96</o:PixelsPerInch>
-            </o:OfficeDocumentSettings>
-        </xml>
-        <![endif]-->
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="format-detection" content="telephone=no" />
-        <meta name="x-apple-disable-message-reformatting" />
-        <link href="https://fonts.googleapis.com/css?family=PT+Serif:400,400i,700,700i|Poppins:400,400i,700,700i" rel="stylesheet" />
-        <title>{title}</title>
-        <style type="text/css">
-            body {{ padding: 0 !important; margin: 0 !important; display: block !important; min-width: 100% !important; width: 100% !important; background: #ffffff; -webkit-text-size-adjust: none; }}
-            .h3 {{ color: #000000; font-family: Arial, sans-serif; font-size: 22px; line-height: 32px; text-align: center; padding-bottom: 15px; }}
-            .text {{ color: #666666; font-family: Arial, sans-serif; font-size: 15px; line-height: 28px; text-align: center; padding-bottom: 15px; }}
-            .text-footer2 {{ color: #777777; font-family: Arial, sans-serif; font-size: 12px; line-height: 26px; text-align: center; padding-bottom: 20px; }}
-        </style>
-    </head>
-    <body class="body">
-        <span class="mcnPreviewText" style="display: none; font-size: 0px; line-height: 0px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden; visibility: hidden; mso-hide: all;">*|MC_PREVIEW_TEXT|*</span>
-        <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#ffffff">
-            <tr>
-                <td align="center" valign="top">
-                    <table width="650" border="0" cellspacing="0" cellpadding="0" class="mobile-shell">
-                        <tr>
-                            <td class="td" style="width: 650px; min-width: 650px; font-size: 0pt; line-height: 0pt; padding: 0; margin: 0; font-weight: normal;">
+        html_body = f"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+    <!--[if gte mso 9]>
+    <xml>
+        <o:OfficeDocumentSettings>
+            <o:AllowPNG/>
+            <o:PixelsPerInch>96</o:PixelsPerInch>
+        </o:OfficeDocumentSettings>
+    </xml>
+    <![endif]-->
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <link href="https://fonts.googleapis.com/css?family=PT+Serif:400,400i,700,700i|Poppins:400,400i,700,700i" rel="stylesheet" />
+    <title>{title}</title>
+    <style type="text/css">
+        body {{ padding: 0 !important; margin: 0 !important; display: block !important; min-width: 100% !important; width: 100% !important; background: #ffffff; -webkit-text-size-adjust: none; }}
+        .h3 {{ color: #000000; font-family: Arial, sans-serif; font-size: 22px; line-height: 32px; text-align: center; padding-bottom: 15px; }}
+        .text {{ color: #666666; font-family: Arial, sans-serif; font-size: 15px; line-height: 28px; text-align: center; padding-bottom: 15px; }}
+        .text-footer2 {{ color: #777777; font-family: Arial, sans-serif; font-size: 12px; line-height: 26px; text-align: center; padding-bottom: 20px; }}
+    </style>
+</head>
+<body class="body">
+    <span class="mcnPreviewText" style="display: none; font-size: 0px; line-height: 0px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden; visibility: hidden; mso-hide: all;">*|MC_PREVIEW_TEXT|*</span>
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#ffffff">
+        <tr>
+            <td align="center" valign="top">
+                <table width="650" border="0" cellspacing="0" cellpadding="0" class="mobile-shell">
+                    <tr>
+                        <td class="td" style="width: 650px; min-width: 650px; font-size: 0pt; line-height: 0pt; padding: 0; margin: 0; font-weight: normal;">
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td class="p30-15 tbrr" style="padding: 30px 0px 40px 0px; border-radius: 12px 12px 0px 0px;">
+                                        <table width="100%" border="0" cellspacing="0" cellpadding="0"></table>
+                                    </td>
+                                </tr>
+                            </table>
+                            <div mc:repeatable="Select" mc:variant="CTA">
                                 <table width="100%" border="0" cellspacing="0" cellpadding="0">
                                     <tr>
-                                        <td class="p30-15 tbrr" style="padding: 30px 0px 40px 0px; border-radius: 12px 12px 0px 0px;">
-                                            <table width="100%" border="0" cellspacing="0" cellpadding="0"></table>
-                                        </td>
-                                    </tr>
-                                </table>
-                                <div mc:repeatable="Select" mc:variant="CTA">
-                                    <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                                        <tr>
-                                            <td class="p30-15" style="padding: 60px 40px 60px 40px; background-color: #f4f4f4;">
-                                                <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                                                    <tr>
-                                                        <td class="h3">
-                                                            <div mc:edit="text_11">
-                                                                {greeting}
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td class="text">
-                                                            <div mc:edit="text_12">
-                                                                {content}
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                </table>
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td class="pb40" style="padding-bottom: 40px;"></td>
-                                        </tr>
-                                    </table>
-                                </div>
-                                <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                                    <tr>
-                                        <td class="p0-15-30" style="padding-bottom: 40px;">
+                                        <td class="p30-15" style="padding: 60px 40px 60px 40px; background-color: #f4f4f4;">
                                             <table width="100%" border="0" cellspacing="0" cellpadding="0">
                                                 <tr>
-                                                    <td class="text-footer2">
-                                                        <div mc:edit="text_30">
-                                                            <div class="footer">{signature}</div>
+                                                    <td class="h3">
+                                                        <div mc:edit="text_11">
+                                                            {greeting}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="text">
+                                                        <div mc:edit="text_12">
+                                                            {content}
                                                         </div>
                                                     </td>
                                                 </tr>
                                             </table>
                                         </td>
                                     </tr>
+                                    <tr>
+                                        <td class="pb40" style="padding-bottom: 40px;"></td>
+                                    </tr>
                                 </table>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-    </body>
-    </html>
-    """.format(
-            title=title,
-            greeting=greeting,
-            content=content.replace('\n', '<br>'),
-            signature=signature
-        )
+                            </div>
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td class="p0-15-30" style="padding-bottom: 40px;">
+                                        <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td class="text-footer2">
+                                                    <div mc:edit="text_30">
+                                                        <div class="footer">{signature}</div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>"""
+
         return text_body, html_body
-    
+
     async def send_otp_email(self, email: str, otp_code: str, language: str = "fr"):
-        """Envoie un email avec un code OTP pour l'authentification.
-
-        Args:
-            email: Adresse email du destinataire.
-            otp_code: Code OTP à envoyer.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email avec un code OTP pour l'authentification."""
         logger.info("[OTP] Préparation de l'envoi d'OTP...")
         if language == "en":
             content = (
@@ -265,16 +251,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_new_user_email(self, email: str, new_password: str, language: str = "fr"):
-        """Envoie un email avec un mot de passe temporaire pour un nouveau compte.
-
-        Args:
-            email: Adresse email du destinataire.
-            new_password: Mot de passe temporaire.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email avec un mot de passe temporaire pour un nouveau compte."""
         logger.info("[USER] Envoi des informations de nouveau compte...")
         if language == "en":
             content = (
@@ -296,16 +273,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_change_password_email(self, email: str, new_password: str, language: str = "fr"):
-        """Envoie un email de confirmation de changement de mot de passe.
-
-        Args:
-            email: Adresse email du destinataire.
-            new_password: Nouveau mot de passe temporaire.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de confirmation de changement de mot de passe."""
         logger.info("[PASSWORD] Envoi du nouveau mot de passe...")
         if language == "en":
             content = (
@@ -325,15 +293,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_account_deleted_email(self, email: str, language: str = "fr"):
-        """Envoie un email de notification de suppression de compte.
-
-        Args:
-            email: Adresse email du destinataire.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de notification de suppression de compte."""
         logger.info("[ACCOUNT] Notification de suppression de compte...")
         local_tz = get_localzone()
         now = datetime.now(local_tz)
@@ -356,16 +316,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_password_reset(self, email: str, new_password: str, language: str = "fr"):
-        """Envoie un email de réinitialisation de mot de passe.
-
-        Args:
-            email: Adresse email du destinataire.
-            new_password: Nouveau mot de passe temporaire.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de réinitialisation de mot de passe."""
         logger.info("[RESET] Envoi du mot de passe réinitialisé...")
         if language == "en":
             content = (
@@ -387,17 +338,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_inscription_confirmation(self, email: str, formation_title: str, statut: StatutInscriptionEnum, language: str = "fr"):
-        """Envoie un email de confirmation d'inscription à une formation.
-
-        Args:
-            email: Adresse email du destinataire.
-            formation_title: Titre de la formation.
-            statut: Statut de l'inscription (StatutInscriptionEnum).
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de confirmation d'inscription à une formation."""
         logger.info(f"[INSCRIPTION] Envoi de confirmation d'inscription à {email}...")
         if language == "en":
             content = (
@@ -417,17 +358,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_inscription_status_update(self, email: str, formation_title: str, statut: StatutInscriptionEnum, language: str = "fr"):
-        """Envoie un email de mise à jour du statut d'inscription.
-
-        Args:
-            email: Adresse email du destinataire.
-            formation_title: Titre de la formation.
-            statut: Statut de l'inscription (StatutInscriptionEnum).
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de mise à jour du statut d'inscription."""
         logger.info(f"[INSCRIPTION] Envoi de mise à jour de statut d'inscription à {email}...")
         if language == "en":
             content = (
@@ -447,19 +378,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_paiement_confirmation(self, email: str, montant: float, formation_title: str, methode: MethodePaiementEnum, statut: StatutPaiementEnum, language: str = "fr"):
-        """Envoie un email de confirmation de paiement pour une formation.
-
-        Args:
-            email: Adresse email du destinataire.
-            montant: Montant du paiement.
-            formation_title: Titre de la formation.
-            methode: Méthode de paiement (MethodePaiementEnum).
-            statut: Statut du paiement (StatutPaiementEnum).
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de confirmation de paiement pour une formation."""
         logger.info(f"[PAIEMENT] Envoi de confirmation de paiement à {email}...")
         if language == "en":
             content = (
@@ -481,17 +400,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_formation_status_update(self, email: str, formation_title: str, statut: StatutFormationEnum, language: str = "fr"):
-        """Envoie un email de mise à jour du statut d'une formation.
-
-        Args:
-            email: Adresse email du destinataire.
-            formation_title: Titre de la formation.
-            statut: Statut de la formation (StatutFormationEnum).
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de mise à jour du statut d'une formation."""
         logger.info(f"[FORMATION] Envoi de mise à jour de statut à {email}...")
         if language == "en":
             content = (
@@ -511,17 +420,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_evaluation_result(self, email: str, evaluation_title: str, score: float, language: str = "fr"):
-        """Envoie un email avec les résultats d'une évaluation.
-
-        Args:
-            email: Adresse email du destinataire.
-            evaluation_title: Titre de l'évaluation.
-            score: Score obtenu.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email avec les résultats d'une évaluation."""
         logger.info(f"[EVALUATION] Envoi des résultats d'évaluation à {email}...")
         if language == "en":
             content = (
@@ -543,17 +442,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_chef_d_oeuvre_submission(self, email: str, chef_d_oeuvre_title: str, statut: StatutProjetIndividuelEnum, language: str = "fr"):
-        """Envoie un email de confirmation de soumission d'un chef-d'œuvre.
-
-        Args:
-            email: Adresse email du destinataire.
-            chef_d_oeuvre_title: Titre du chef-d'œuvre.
-            statut: Statut du chef-d'œuvre (StatutProjetIndividuelEnum).
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de confirmation de soumission d'un chef-d'œuvre."""
         logger.info(f"[CHEF_D_OEUVRE] Envoi de confirmation de soumission à {email}...")
         if language == "en":
             content = (
@@ -573,16 +462,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_projet_collectif_invitation(self, email: str, projet_title: str, language: str = "fr"):
-        """Envoie un email d'invitation à un projet collectif.
-
-        Args:
-            email: Adresse email du destinataire.
-            projet_title: Titre du projet collectif.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email d'invitation à un projet collectif."""
         logger.info(f"[PROJET_COLLECTIF] Envoi d'invitation à {email}...")
         if language == "en":
             content = (
@@ -602,16 +482,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_plan_intervention_update(self, email: str, plan_title: str, language: str = "fr"):
-        """Envoie un email de mise à jour d'un plan d'intervention.
-
-        Args:
-            email: Adresse email du destinataire.
-            plan_title: Titre du plan d'intervention.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de mise à jour d'un plan d'intervention."""
         logger.info(f"[PLAN_INTERVENTION] Envoi de mise à jour à {email}...")
         if language == "en":
             content = (
@@ -631,17 +502,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_accreditation_confirmation(self, email: str, accreditation_title: str, formation_title: str, language: str = "fr"):
-        """Envoie un email de confirmation d'accréditation.
-
-        Args:
-            email: Adresse email du destinataire.
-            accreditation_title: Titre de l'accréditation.
-            formation_title: Titre de la formation.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de confirmation d'accréditation."""
         logger.info(f"[ACCREDITATION] Envoi de confirmation d'accréditation à {email}...")
         if language == "en":
             content = (
@@ -661,16 +522,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_actualite_notification(self, email: str, actualite_title: str, language: str = "fr"):
-        """Envoie un email de notification pour une nouvelle actualité.
-
-        Args:
-            email: Adresse email du destinataire.
-            actualite_title: Titre de l'actualité.
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de notification pour une nouvelle actualité."""
         logger.info(f"[ACTUALITE] Envoi de notification d'actualité à {email}...")
         if language == "en":
             content = (
@@ -690,17 +542,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_file_upload_confirmation(self, email: str, filename: str, file_type: FileTypeEnum, language: str = "fr"):
-        """Envoie un email de confirmation de téléversement de fichier.
-
-        Args:
-            email: Adresse email du destinataire.
-            filename: Nom du fichier téléversé.
-            file_type: Type du fichier (FileTypeEnum).
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de confirmation de téléversement de fichier."""
         logger.info(f"[FILE] Envoi de confirmation de téléversement à {email}...")
         if language == "en":
             content = (
@@ -720,17 +562,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_multiple_files_upload_confirmation(self, email: str, filenames: List[str], file_type: FileTypeEnum, language: str = "fr"):
-        """Envoie un email de confirmation de téléversement de plusieurs fichiers.
-
-        Args:
-            email: Adresse email du destinataire.
-            filenames: Liste des noms des fichiers téléversés.
-            file_type: Type des fichiers (FileTypeEnum).
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email de confirmation de téléversement de plusieurs fichiers."""
         logger.info(f"[FILE] Envoi de confirmation de téléversement multiple à {email}...")
         files_list = "\n".join([f"- <b>{filename}</b>" for filename in filenames])
         if language == "en":
@@ -751,18 +583,7 @@ class EmailService:
         await self._send_email(email, subject, text_body, html_body)
 
     async def send_custom_email(self, email: str, subject: str, content: str, title: str = None, language: str = "fr"):
-        """Envoie un email personnalisé avec un sujet et contenu spécifiés.
-
-        Args:
-            email: Adresse email du destinataire.
-            subject: Sujet de l'email.
-            content: Contenu de l'email.
-            title: Titre de l'email (optionnel, utilise le sujet si non spécifié).
-            language: Langue de l'email ("fr" pour français, "en" pour anglais).
-
-        Raises:
-            HTTPException: 400 si l'email est invalide, 500 si erreur SMTP.
-        """
+        """Envoie un email personnalisé avec un sujet et contenu spécifiés."""
         logger.info(f"[CUSTOM] Envoi d'un email personnalisé à {email}")
         title = title or subject
         text_body, html_body = self._get_email_template(content, title, language)
