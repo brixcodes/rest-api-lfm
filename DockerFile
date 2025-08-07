@@ -30,20 +30,23 @@ RUN sed -i 's/\r$//g' /entrypoint && chmod +x /entrypoint && chown lafaom /entry
 COPY ./start /start
 RUN sed -i 's/\r$//g' /start && chmod +x /start && chown lafaom /start
 
-# Préparation du fichier de log
-RUN touch /app/app.log && chown lafaom:lafaom /app/app.log
-
-# Copier le code source
+# Copie du code source
 COPY . .
 
-# Exposer le port de l'application
-EXPOSE 8000
+# Création du répertoire documents + permission
+RUN mkdir -p /app/static && chmod -R 777 /app/static
 
-# Attribution des droits
+# Préparation du fichier de log (si nécessaire)
+RUN touch /app/app.log && chown lafaom:lafaom /app/app.log
+
+# Attribution des droits sur /app
 RUN chown -R lafaom:lafaom /app
 
 # Utilisation de l’utilisateur non-root
 USER lafaom
+
+# Exposer le port de l'application
+EXPOSE 8000
 
 # Point d’entrée
 ENTRYPOINT ["/entrypoint"]

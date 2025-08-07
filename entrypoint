@@ -1,47 +1,45 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# if any of the commands in your code fails for any reason, the entire script fails
+# Quitter immédiatement si une commande échoue
 set -o errexit
-# fail exit if one of your pipe command fails
+# Échouer si une commande dans un pipeline échoue
 set -o pipefail
-# exits if any of your variables is not set
+# Échouer si une variable non définie est utilisée
 set -o nounset
 
+# Petite pause initiale (utile dans certains environnements Docker Compose)
+sleep 1
+
+# Fonction qui vérifie si PostgreSQL est prêt
 postgres_ready() {
-python << END
+  python <<END
 import sys
-
 import psycopg2
-import urllib.parse as urlparse
 import os
-
-url = urlparse.urlparse(os.environ['DATABASE_URL'])
-dbname = url.path[1:]
-user = url.username
-password = url.password
-host = url.hostname
-port = url.port
+import urllib.parse as urlparse
 
 try:
-    psycopg2.connect(
-        dbname=dbname,
-        user=user,
-        password=password,
-        host=host,
-        port=port
+    url = urlparse.urlparse(os.environ["DATABASE_URL"])
+    conn = psycopg2.connect(
+        dbname=url.path[1:],
+        user=url.username,
+        password=url.password,
+        host=url.hostname,
+        port=url.port
     )
 except psycopg2.OperationalError:
     sys.exit(-1)
 sys.exit(0)
-
 END
 }
+
+# Attente active jusqu'à ce que PostgreSQL soit prêt
 until postgres_ready; do
-  >&2 echo 'Waiting for PostgreSQL to become available...'
+  >&2 echo "[Entrypoint] Waiting for PostgreSQL to become available..."
   sleep 1
 done
->&2 echo 'PostgreSQL is available'
 
+>&2 echo "[Entrypoint] PostgreSQL is available. Continuing..."
 
-
+# Lancer le processus passé en argument
 exec "$@"
