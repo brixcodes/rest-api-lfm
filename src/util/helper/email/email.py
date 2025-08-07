@@ -140,8 +140,9 @@ class EmailService:
         <xml>
             <o:OfficeDocumentSettings>
                 <o:AllowPNG/>
-                <o:PixelsPerInch>96</o:OfficeDocumentSettings>
-            </xml>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
         <![endif]-->
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -229,8 +230,7 @@ class EmailService:
             signature=signature
         )
         return text_body, html_body
-
-
+    
     async def send_otp_email(self, email: str, otp_code: str, language: str = "fr"):
         """Envoie un email avec un code OTP pour l'authentification.
 
