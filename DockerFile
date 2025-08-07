@@ -25,31 +25,29 @@ RUN pip install --upgrade pip && \
 
 # Copie des scripts d’entrée et de démarrage
 COPY ./entrypoint /entrypoint
-RUN sed -i 's/\r$//g' /entrypoint && chmod +x /entrypoint && chown lafaom /entrypoint
-
 COPY ./start /start
-RUN sed -i 's/\r$//g' /start && chmod +x /start && chown lafaom /start
+RUN sed -i 's/\r$//g' /entrypoint /start && \
+    chmod +x /entrypoint /start && \
+    chown lafaom:lafaom /entrypoint /start
 
 # Copie du code source
 COPY . .
 
-# Création du répertoire documents + permission
-RUN mkdir -p /app/static && chmod -R 777 /app/static
+# Création des répertoires nécessaires avec les bonnes permissions
+RUN mkdir -p /app/static/documents \
+             /app/static/images \
+             /app/static/audios \
+             /app/static/videos \
+             /app/logs && \
+    chown -R lafaom:lafaom /app/static /app/logs
 
-RUN mkdir -p /app/logs && chmod -R 777 /app/logs
-
-
-# Préparation du fichier de log (si nécessaire)
-RUN mkdir -p /app/logs && chown -R lafaom:lafaom /app/logs
-
-
-# Attribution des droits sur /app
+# Attribution finale des droits sur /app
 RUN chown -R lafaom:lafaom /app
 
 # Utilisation de l’utilisateur non-root
 USER lafaom
 
-# Exposer le port de l'application
+# Exposition du port de l'application
 EXPOSE 8000
 
 # Point d’entrée
