@@ -294,10 +294,23 @@ class FileService:
         for file_type, config in self.FILE_CONFIG.items():
             storage_path = Path(config["storage_path"])
             try:
-                storage_path.mkdir(parents=True, exist_ok=True)
-                if os.name != "nt":
-                    os.chmod(storage_path, 0o755)
-                logger.info(f"Répertoire {storage_path} créé ou vérifié avec permissions 755 pour {file_type.value}.")
+                if not storage_path.exists():
+                    storage_path.mkdir(parents=True, exist_ok=True)
+                    if os.name != "nt":
+                        try:
+                            os.chmod(storage_path, 0o755)
+                        except PermissionError as e:
+                            logger.warning(f"Impossible de changer les permissions pour {storage_path}: {e}")
+                logger.info(f"Répertoire {storage_path} créé ou vérifié pour {file_type.value}.")
+            except PermissionError as e:
+                if storage_path.exists():
+                    logger.info(f"Le répertoire {storage_path} existe déjà, poursuite de l'exécution.")
+                else:
+                    logger.error(f"Erreur création répertoire {storage_path} pour {file_type.value}: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Erreur création répertoire {storage_path} pour {file_type.value}"
+                    )
             except Exception as e:
                 logger.error(f"Erreur création répertoire {storage_path} pour {file_type.value}: {e}")
                 raise HTTPException(
