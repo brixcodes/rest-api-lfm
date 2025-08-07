@@ -27,7 +27,7 @@ from src.util.helper.enum import (
 from src.api.schema import (
     Permission, PermissionLight, PermissionCreate, PermissionUpdate,
     Role, RoleLight, RoleCreate, RoleUpdate,
-    Utilisateur, UtilisateurLight, UtilisateurCreate, UtilisateurUpdate,
+    Utilisateur, UtilisateurLight, UtilisateurCreate, UtilisateurMinLight, UtilisateurUpdate,
     InscriptionFormation, InscriptionFormationLight, InscriptionFormationCreate, InscriptionFormationUpdate,
     Formation, FormationLight, FormationCreate, FormationUpdate,
     Module, ModuleLight, ModuleCreate, ModuleUpdate,
@@ -166,20 +166,15 @@ class BaseService(Generic[ModelType, SchemaType, CreateSchemaType, UpdateSchemaT
             )
 
     async def _safe_from_orm(self, db_obj, schema_class):
+        """Sérialise un objet SQLAlchemy de manière sûre en évitant les relations lazy."""
         try:
-            # Preload all relationships defined in the model to avoid lazy-loading issues
-            query = select(db_obj.__class__).filter(db_obj.__class__.id == db_obj.id).options(
-                selectinload("*")  # Load all relationships eagerly
-            )
-            result = await db_obj._sa_instance_state.session.execute(query)
-            db_obj = result.scalars().first()
             return schema_class.from_orm(db_obj)
         except Exception as e:
-            logger.error(f"Erreur lors de la sérialisation de {self.entity_name}: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Erreur lors de la sérialisation de {self.entity_name}"
-            )
+            if "MissingGreenlet" in str(e) or "greenlet_spawn" in str(e):
+                # Si c'est un problème de relation lazy, utiliser le light_schema
+                return self.light_schema.from_orm(db_obj)
+            else:
+                raise e
 
     async def update(self, db: AsyncSession, id: int, obj_in: UpdateSchemaType) -> SchemaType:
         """Met à jour une entité."""
@@ -995,17 +990,11 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                 )
                 permissions = permissions.scalars().all()
                 
-                # Utiliser delete directement sur la table d'association au lieu de db_role.permissions.remove()
-                # pour éviter l'erreur MissingGreenlet
                 for permission in permissions:
-                    await db.execute(
-                        association_roles_permissions.delete().where(
-                            (association_roles_permissions.c.role_id == role_id) &
-                            (association_roles_permissions.c.permission_id == permission.id)
-                        )
-                    )
+                    db_role.permissions.remove(permission)
                 
                 await db.flush()
+                await db.refresh(db_role)
                 return f"{len(permissions_to_remove)} permission(s) révoquée(s) du rôle {db_role.nom} avec succès"
             except SQLAlchemyError as e:
                 logger.error(f"Erreur lors de la révocation des permissions du rôle {role_id}: {str(e)}")
@@ -1464,44 +1453,23 @@ class FormationService(BaseService[FormationModel, Formation, FormationCreate, F
         """Crée une nouvelle formation avec validation de l'unicité du titre."""
         await self.check_unique(db, "titre", obj_in.titre, "titre")
         return await super().create(db, obj_in)
-
+    
     async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[FormationLight]:
-        """Récupère toutes les formations avec leurs relations."""
-        return await super().get_all(db, skip, limit, [
-            FormationModel.modules, FormationModel.inscriptions, FormationModel.projets_collectifs,
-            FormationModel.accreditations
-        ])
-        
-    async def update(self, db: AsyncSession, id: int, obj_in: FormationUpdate) -> Formation:
         try:
-            db_obj = await self.get_or_404(db, id)
-            update_data = obj_in.model_dump(exclude_unset=True)
-            for key, value in update_data.items():
-                setattr(db_obj, key, value)
-            db.add(db_obj)
-            await db.flush()
-            await db.refresh(db_obj)
-            # Eagerly load relationships
-            query = select(FormationModel).filter(FormationModel.id == id).options(
-                selectinload(FormationModel.modules),
-                selectinload(FormationModel.inscriptions),
-                selectinload(FormationModel.projets_collectifs),
-                selectinload(FormationModel.accreditations)
+            result = await db.execute(
+                select(self.model)
+                .offset(skip)
+                .limit(limit)
             )
-            result = await db.execute(query)
-            db_obj = result.scalars().first()
-            return self.schema.from_orm(db_obj)
-        except IntegrityError as e:
-            logger.error(f"Erreur d'intégrité lors de la mise à jour de Formation: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Formation existe déjà"
-            )
+            formations = result.scalars().all()
+            if not formations:
+                return []
+            return [self.light_schema.from_orm(formation) for formation in formations]
         except SQLAlchemyError as e:
-            logger.error(f"Erreur de base de données lors de la mise à jour de Formation: {str(e)}", exc_info=True)
+            logger.error(f"Erreur de base de données lors de la récupération des formations: {str(e)}", exc_info=True)
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Erreur de base de données lors de la mise à jour de Formation"
+                status_code=500,
+                detail=f"Erreur de base de données lors de la récupération des formations: {str(e)}"
             )
 
 
@@ -1516,34 +1484,69 @@ class InscriptionFormationService(BaseService[InscriptionFormationModel, Inscrip
 
     async def create(self, db: AsyncSession, obj_in: InscriptionFormationCreate) -> InscriptionFormationLight:
         """Crée une nouvelle inscription avec validation."""
-        async with db.begin():
-            try:
-                await self.get_or_404(db, obj_in.utilisateur_id, UtilisateurModel, "Utilisateur")
-                await self.get_or_404(db, obj_in.formation_id, FormationModel, "Formation")
-                query = select(InscriptionFormationModel).filter(
-                    InscriptionFormationModel.utilisateur_id == obj_in.utilisateur_id,
-                    InscriptionFormationModel.formation_id == obj_in.formation_id
-                )
-                result = await db.execute(query)
-                if result.scalars().first():
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="L'utilisateur est déjà inscrit à cette formation"
-                    )
-                return await super().create(db, obj_in)
-            except SQLAlchemyError as e:
-                logger.error(f"Erreur lors de la création de l'inscription: {str(e)}")
+        await self.get_or_404(db, obj_in.utilisateur_id, UtilisateurModel, "Utilisateur")
+        await self.get_or_404(db, obj_in.formation_id, FormationModel, "Formation")
+        try:
+            db_obj = self.model(**obj_in.dict(exclude_unset=True))
+            db.add(db_obj)
+            await db.flush()
+            # Eagerly load the paiements relationship
+            result = await db.execute(
+                select(self.model)
+                .filter(self.model.id == db_obj.id)
+                .options(selectinload(self.model.paiements))
+            )
+            db_obj = result.scalars().first()
+            if db_obj is None:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Erreur lors de la création de l'inscription"
+                    detail="Failed to retrieve newly created inscription"
                 )
+            return await self._safe_from_orm(db_obj, self.light_schema)
+        except IntegrityError as e:
+            logger.error(f"Erreur d'intégrité lors de la création de l'inscription: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Inscription existe déjà"
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la création de l'inscription: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erreur de base de données lors de la création de l'inscription"
+            )
 
-    async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[InscriptionFormation]:
-        """Récupère toutes les inscriptions avec leurs relations."""
-        return await super().get_all(db, skip, limit, [
-            InscriptionFormationModel.utilisateur, InscriptionFormationModel.formation,
-            InscriptionFormationModel.paiements
-        ])
+    async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[InscriptionFormationLight]:
+        try:
+            result = await db.execute(
+                select(self.model)
+                .options(
+                    selectinload(self.model.utilisateur)
+                        .selectinload(UtilisateurModel.role),
+                    selectinload(self.model.utilisateur)
+                        .selectinload(UtilisateurModel.permissions),
+                    selectinload(self.model.formation),
+                    selectinload(self.model.paiements)
+                )
+                .offset(skip)
+                .limit(limit)
+            )
+            inscriptions = result.scalars().all()
+            if not inscriptions:
+                return []
+            return [self.light_schema.from_orm(inscription) for inscription in inscriptions]
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la récupération des inscriptions: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erreur de base de données lors de la récupération des inscriptions: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Erreur inattendue lors de la récupération des inscriptions: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erreur inattendue: {str(e)}"
+            )
 
     async def update(self, db: AsyncSession, id: int, obj_in: InscriptionFormationUpdate) -> InscriptionFormation:
         """Met à jour une inscription avec validation."""
@@ -1777,6 +1780,33 @@ class ModuleService(BaseService[ModuleModel, Module, ModuleCreate, ModuleUpdate]
         return await super().get_all(db, skip, limit, [
             ModuleModel.formation, ModuleModel.ressources, ModuleModel.evaluations, ModuleModel.chefs_d_oeuvre
         ])
+
+    async def get_modules_by_formation(self, db: AsyncSession, formation_id: int, skip: int = 0, limit: int = 100) -> List[ModuleLight]:
+        """Récupère tous les modules d'une formation spécifique."""
+        try:
+            # Vérifier que la formation existe
+            await self.get_or_404(db, formation_id, FormationModel, "Formation")
+
+            # Récupérer les modules de la formation, triés par ordre
+            result = await db.execute(
+                select(self.model)
+                .filter(self.model.formation_id == formation_id)
+                .order_by(self.model.ordre)
+                .offset(skip)
+                .limit(limit)
+            )
+            modules = result.scalars().all()
+
+            if not modules:
+                return []
+
+            return [self.light_schema.model_validate(module) for module in modules]
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la récupération des modules de la formation {formation_id}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erreur de base de données lors de la récupération des modules: {str(e)}"
+            )
 
     async def update(self, db: AsyncSession, id: int, obj_in: ModuleUpdate) -> Module:
         """Met à jour un module avec validation."""

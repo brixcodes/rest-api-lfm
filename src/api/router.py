@@ -626,6 +626,27 @@ async def get_formation(formation_id: int, db: AsyncSession = Depends(get_async_
     return await formation_service.get(db, formation_id)
 
 @router.get(
+    "/formations/{formation_id}/modules",
+    response_model=List[ModuleLight],
+    tags=["Formations"],
+    summary="Récupérer tous les modules d'une formation",
+    description="Récupère une liste paginée de tous les modules d'une formation spécifique, triés par ordre."
+)
+async def get_formation_modules(formation_id: int, skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_async_db)):
+    """
+    Récupère tous les modules d'une formation spécifique.
+
+    - **formation_id**: ID de la formation dont on veut récupérer les modules.
+    - **skip**: Nombre de modules à sauter (défaut: 0).
+    - **limit**: Nombre maximum de modules à retourner (défaut: 100).
+    - **Réponses**:
+        - **200**: Liste des modules de la formation (ex. `[{"id": 1, "titre": "Introduction", "ordre": 1}, ...]`).
+        - **404**: Formation non trouvée.
+        - **500**: Erreur interne du serveur.
+    """
+    return await module_service.get_modules_by_formation(db, formation_id, skip, limit)
+
+@router.get(
     "/formations",
     response_model=List[FormationLight],
     tags=["Formations"],

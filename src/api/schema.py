@@ -40,6 +40,14 @@ class UtilisateurLight(BaseModel):
     permissions: List[PermissionLight] = []  
     class Config:
         from_attributes = True
+class UtilisateurMinLight(BaseModel):
+    id: int
+    nom: str
+    prenom: Optional[str]
+    sexe: SexeEnum
+    email: str
+    class Config:
+        from_attributes = True
 
 class PaiementLight(BaseModel):
     id: int
@@ -48,16 +56,6 @@ class PaiementLight(BaseModel):
     date_paiement: datetime
     methode_paiement: MethodePaiementEnum
     reference_transaction: Optional[str] = None
-    class Config:
-        from_attributes = True
-
-class InscriptionFormationLight(BaseModel):
-    id: int
-    statut: StatutInscriptionEnum
-    progression: float
-    montant_verse: float = Field(ge=0.0)
-    statut_paiement: StatutPaiementEnum
-    paiements: List[PaiementLight] = []
     class Config:
         from_attributes = True
 
@@ -72,10 +70,25 @@ class FormationLight(BaseModel):
     class Config:
         from_attributes = True
 
+class InscriptionFormationLight(BaseModel):
+    id: int
+    statut: StatutInscriptionEnum
+    progression: float
+    montant_verse: float
+    statut_paiement: StatutPaiementEnum
+    date_inscription: datetime  # Champ requis
+    utilisateur: UtilisateurLight  # Champ requis
+    formation: FormationLight      # Champ requis
+    paiements: List[PaiementLight] = []
+    
+    class Config:
+        from_attributes = True
+
 class ModuleLight(BaseModel):
     id: int
     titre: str
     ordre: int
+    photo_couverture: str
     class Config:
         from_attributes = True
 
