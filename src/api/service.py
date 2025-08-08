@@ -529,22 +529,29 @@ class PermissionService(BaseService[PermissionModel, Permission, PermissionCreat
         return await super().create(db, obj_in)
 
     async def get(self, db: AsyncSession, id: int) -> PermissionLight:
-        """Récupère une permission par ID."""
-        db_obj = await self.get_or_404(db, id)
-        return await self._safe_from_orm(db_obj, self.light_schema)
+        """Récupère une permission par ID (avec rôles)."""
+        try:
+            result = await db.execute(
+                select(self.model).options(selectinload(self.model.roles)).where(self.model.id == id)
+            )
+            db_obj = result.scalars().first()
+            if not db_obj:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Permission non trouvée")
+            return await self._safe_from_orm(db_obj, self.light_schema)
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur lors de la récupération de la permission: {str(e)}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Erreur lors de la récupération de la permission")
 
     async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[PermissionLight]:
-        """Récupère toutes les permissions."""
+        """Récupère toutes les permissions (avec rôles)."""
         try:
-            # Récupérer directement les objets de base de données sans relations
             result = await db.execute(
                 select(self.model)
+                .options(selectinload(self.model.roles))
                 .offset(skip)
                 .limit(limit)
             )
             db_objects = result.scalars().all()
-            
-            # Convertir directement en PermissionLight pour éviter les problèmes de relations lazy
             return [await self._safe_from_orm(obj, self.light_schema) for obj in db_objects]
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de la récupération des permissions: {str(e)}")

@@ -13,17 +13,30 @@ from src.util.helper.enum import (
 # ========================= SCHÉMAS LIGHT =========================
 # ==================================================================
 
-class PermissionLight(BaseModel):
-    id: int
-    nom: PermissionEnum
-    class Config:
-        from_attributes = True
 
 class RoleLight(BaseModel):
     id: int
     nom: RoleEnum
     class Config:
         from_attributes = True
+        
+class PermissionLight(BaseModel):
+    id: int
+    nom: PermissionEnum
+    roles: List[RoleLight] = []
+    class Config:
+        from_attributes = True
+
+# Resolve forward references for circular types (Pydantic v2/v1)
+try:
+    PermissionLight.model_rebuild()
+    RoleLight.model_rebuild()
+except Exception:
+    try:
+        PermissionLight.update_forward_refs()
+        RoleLight.update_forward_refs()
+    except Exception:
+        pass
 
 class UtilisateurLight(BaseModel):
     id: int
@@ -37,7 +50,7 @@ class UtilisateurLight(BaseModel):
     created_at: datetime
     updated_at: datetime
     role: Optional[RoleLight]
-    permissions: List[PermissionLight] = []  
+    permissions: List[PermissionLight] = []
     class Config:
         from_attributes = True
 class UtilisateurMinLight(BaseModel):
@@ -80,7 +93,7 @@ class InscriptionFormationLight(BaseModel):
     utilisateur: UtilisateurLight  # Champ requis
     formation: FormationLight      # Champ requis
     paiements: List[PaiementLight] = []
-    
+
     class Config:
         from_attributes = True
 
@@ -196,7 +209,7 @@ class ActualiteLight(BaseModel):
 class loginSchema(BaseModel):
     email: str
     password: str
-        
+
 class Permission(BaseModel):
     id: int
     nom: PermissionEnum
@@ -605,7 +618,7 @@ class PropositionCreate(BaseModel):
     question_id: int
     class Config:
         from_attributes = True
-        
+
 class QuestionCreate(BaseModel):
     type: EvaluationTypeEnum
     contenu: str
@@ -964,7 +977,7 @@ class ActualiteUpdate(BaseModel):
 
 class ResetPasswordRequestSchema(BaseModel):
     email: str
-    
+
 class ChangePasswordSchema(BaseModel):
     utilisateur_id: int
     current_password: str
