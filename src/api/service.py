@@ -1193,12 +1193,55 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
 
     async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[UtilisateurLight]:
         """Récupère tous les utilisateurs avec leurs relations."""
-        return await super().get_all(db, skip, limit, [
-            UtilisateurModel.role, UtilisateurModel.permissions, UtilisateurModel.inscriptions,
-            UtilisateurModel.genotypes, UtilisateurModel.plans_intervention, UtilisateurModel.actualites,
-            UtilisateurModel.accreditations, UtilisateurModel.chefs_d_oeuvre, UtilisateurModel.projets_collectifs,
-            UtilisateurModel.resultats_evaluations
-        ])
+        try:
+            query = select(self.model).offset(skip).limit(limit).options(
+                selectinload(self.model.role).selectinload(RoleModel.permissions),
+                selectinload(self.model.permissions),
+                selectinload(self.model.inscriptions),
+                selectinload(self.model.genotypes),
+                selectinload(self.model.plans_intervention),
+                selectinload(self.model.actualites),
+                selectinload(self.model.accreditations),
+                selectinload(self.model.chefs_d_oeuvre),
+                selectinload(self.model.projets_collectifs),
+                selectinload(self.model.resultats_evaluations)
+            )
+            result = await db.execute(query)
+            users = result.scalars().all()
+            user_list = []
+            for user in users:
+                role_light = None
+                if user.role:
+                    role_light = RoleLight(
+                        id=user.role.id,
+                        nom=user.role.nom,
+                        permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in user.role.permissions],
+                        user_count=(await db.execute(
+                            select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == user.role.id)
+                        )).scalar()
+                    )
+                user_light = UtilisateurLight(
+                    id=user.id,
+                    nom=user.nom,
+                    prenom=user.prenom,
+                    sexe=user.sexe,
+                    email=user.email,
+                    statut=user.statut,
+                    est_actif=user.est_actif,
+                    date_naissance=user.date_naissance,
+                    created_at=user.created_at,
+                    updated_at=user.updated_at,
+                    role=role_light,
+                    permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in user.permissions]
+                )
+                user_list.append(user_light)
+            return user_list
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la récupération des utilisateurs: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erreur de base de données lors de la récupération des utilisateurs"
+            )
 
     async def change_user_status(self, db: AsyncSession, user_id: int, statut: StatutCompteEnum) -> UtilisateurLight:
         """Change le statut d'un utilisateur et retourne l'utilisateur mis à jour."""
