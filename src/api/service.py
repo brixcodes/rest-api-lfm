@@ -26,7 +26,7 @@ from src.util.helper.enum import (
 )
 from src.api.schema import (
     Permission, PermissionLight, PermissionCreate, PermissionUpdate,
-    Role, RoleLight, RoleCreate, RoleUpdate,
+    Role, RoleLight, RoleCreate, RoleUpdate, PermissionMinLight,
     Utilisateur, UtilisateurLight, UtilisateurCreate, UtilisateurMinLight, UtilisateurUpdate,
     InscriptionFormation, InscriptionFormationLight, InscriptionFormationCreate, InscriptionFormationUpdate,
     Formation, FormationLight, FormationCreate, FormationUpdate,
@@ -898,7 +898,7 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                 return RoleLight(
                     id=db_obj.id,
                     nom=db_obj.nom,
-                    permissions=[perm.nom for perm in db_obj.permissions],
+                    permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.permissions],
                     user_count=user_count
                 )
             except IntegrityError:
@@ -933,7 +933,7 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
             return RoleLight(
                 id=db_obj.id,
                 nom=db_obj.nom,
-                permissions=[perm.nom for perm in db_obj.permissions],
+                permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.permissions],
                 user_count=user_count
             )
         except SQLAlchemyError as e:
@@ -959,7 +959,7 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                 role_light = RoleLight(
                     id=role.id,
                     nom=role.nom,
-                    permissions=[perm.nom for perm in role.permissions],
+                    permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in role.permissions],
                     user_count=user_count
                 )
                 role_list.append(role_light)
@@ -2384,4 +2384,4 @@ class ActualiteService(BaseService[ActualiteModel, Actualite, ActualiteCreate, A
        
        
                 
-                
+                 

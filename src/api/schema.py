@@ -27,17 +27,17 @@ class PermissionLight(BaseModel):
     class Config:
         from_attributes = True
 
-class PermissionLight(BaseModel):
+# Minimal permission shape for embedding in Role/RoleLight
+class PermissionMinLight(BaseModel):
     id: int
     nom: PermissionEnum
-    roles: List[RoleMinLight] = []
     class Config:
         from_attributes = True
 
 class RoleLight(BaseModel):
     id: int
     nom: RoleEnum
-    permissions: List[PermissionEnum] = []  # Permissions as enums
+    permissions: List[PermissionMinLight] = []  # Permissions as objects
     user_count: int = 0  # Count of associated users
     class Config:
         from_attributes = True
@@ -238,7 +238,7 @@ class Permission(BaseModel):
 class Role(BaseModel):
     id: int
     nom: RoleEnum
-    permissions: List[PermissionEnum] = []
+    permissions: List[PermissionMinLight] = []
 
     class Config:
         from_attributes = True
