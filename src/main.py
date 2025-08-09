@@ -41,9 +41,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://lafaom-mao.vercel.app/",
-        "http://localhost:5173/",
-        "https://lafaom-mao.netlify.app/"
+        "https://lafaom-mao.vercel.app",
+        "http://localhost:5173",
+        "https://lafaom-mao.netlify.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
