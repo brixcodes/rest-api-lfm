@@ -14,16 +14,31 @@ from src.util.helper.enum import (
 # ==================================================================
 
 
-class RoleLight(BaseModel):
+class RoleMinLight(BaseModel):
     id: int
     nom: RoleEnum
     class Config:
         from_attributes = True
-        
+
 class PermissionLight(BaseModel):
     id: int
     nom: PermissionEnum
-    roles: List[RoleLight] = []
+    roles: List[RoleMinLight] = []
+    class Config:
+        from_attributes = True
+
+class PermissionLight(BaseModel):
+    id: int
+    nom: PermissionEnum
+    roles: List[RoleMinLight] = []
+    class Config:
+        from_attributes = True
+
+class RoleLight(BaseModel):
+    id: int
+    nom: RoleEnum
+    permissions: List[PermissionEnum] = []  # Permissions as enums
+    user_count: int = 0  # Count of associated users
     class Config:
         from_attributes = True
 
@@ -31,10 +46,12 @@ class PermissionLight(BaseModel):
 try:
     PermissionLight.model_rebuild()
     RoleLight.model_rebuild()
+    RoleMinLight.model_rebuild()
 except Exception:
     try:
         PermissionLight.update_forward_refs()
         RoleLight.update_forward_refs()
+        RoleMinLight.update_forward_refs()
     except Exception:
         pass
 
@@ -221,7 +238,7 @@ class Permission(BaseModel):
 class Role(BaseModel):
     id: int
     nom: RoleEnum
-    permissions: List[PermissionLight] = []
+    permissions: List[PermissionEnum] = []
 
     class Config:
         from_attributes = True

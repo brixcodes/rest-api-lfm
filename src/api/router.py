@@ -450,38 +450,37 @@ async def init_permissions_and_roles(db: AsyncSession = Depends(get_async_db)):
     "/roles",
     response_model=RoleLight,
     tags=["Rôles"],
-    summary="Créer un nouveau rôle",
-    description="Crée un nouveau rôle dans le système."
+    summary="Créer un rôle",
+    description="Crée un nouveau rôle avec des permissions associées."
 )
 async def create_role(role: RoleCreate, db: AsyncSession = Depends(get_async_db)):
     """
-    Crée un nouveau rôle avec validation de l'unicité du nom.
+    Crée un nouveau rôle.
 
-    - **role**: Schéma de création du rôle.
+    - **role**: Données du rôle à créer (nom et IDs des permissions).
     - **Réponses**:
-        - **200**: Rôle créé avec succès (ex. `{"id": 1, "nom": "admin"}`).
-        - **400**: Données invalides.
+        - **201**: Rôle créé (ex. `{"id": 1, "nom": "ADMIN", "permissions": ["MANAGE_USERS"], "user_count": 0}`).
         - **409**: Rôle existe déjà.
-        - **500**: Erreur interne du serveur.
+        - **500**: Erreur interne.
     """
     return await role_service.create(db, role)
 
 @router.get(
     "/roles/{role_id}",
-    response_model=Role,
+    response_model=RoleLight,
     tags=["Rôles"],
-    summary="Récupérer un rôle par ID",
+    summary="Récupérer un rôle",
     description="Récupère les détails d'un rôle spécifique par son ID."
 )
 async def get_role(role_id: int, db: AsyncSession = Depends(get_async_db)):
     """
-    Récupère un rôle spécifique.
+    Récupère un rôle par ID.
 
-    - **role_id**: ID du rôle à récupérer.
+    - **role_id**: ID du rôle.
     - **Réponses**:
-        - **200**: Détails du rôle (ex. `{"id": 1, "nom": "admin", "permissions": [...], ...}`).
+        - **200**: Rôle récupéré (ex. `{"id": 1, "nom": "ADMIN", "permissions": ["MANAGE_USERS"], "user_count": 5}`).
         - **404**: Rôle non trouvé.
-        - **500**: Erreur interne du serveur.
+        - **500**: Erreur interne.
     """
     return await role_service.get(db, role_id)
 
@@ -490,17 +489,17 @@ async def get_role(role_id: int, db: AsyncSession = Depends(get_async_db)):
     response_model=List[RoleLight],
     tags=["Rôles"],
     summary="Lister tous les rôles",
-    description="Récupère une liste paginée de tous les rôles avec leurs relations."
+    description="Récupère la liste de tous les rôles avec leurs permissions et le nombre d'utilisateurs associés."
 )
-async def list_roles(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_async_db)):
+async def get_all_roles(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_async_db)):
     """
-    Liste tous les rôles avec pagination.
+    Liste tous les rôles.
 
-    - **skip**: Nombre de rôles à sauter (défaut: 0).
-    - **limit**: Nombre maximum de rôles à retourner (défaut: 100).
+    - **skip**: Nombre d'éléments à sauter.
+    - **limit**: Nombre maximum d'éléments à retourner.
     - **Réponses**:
-        - **200**: Liste des rôles (ex. `[{"id": 1, "nom": "admin", ...}, ...]`).
-        - **500**: Erreur interne du serveur.
+        - **200**: Liste des rôles (ex. `[{"id": 1, "nom": "ADMIN", "permissions": ["MANAGE_USERS"], "user_count": 5}, ...]`).
+        - **500**: Erreur interne.
     """
     return await role_service.get_all(db, skip, limit)
 
@@ -509,22 +508,21 @@ async def list_roles(skip: int = 0, limit: int = 100, db: AsyncSession = Depends
     response_model=Role,
     tags=["Rôles"],
     summary="Mettre à jour un rôle",
-    description="Met à jour un rôle spécifique par son ID."
+    description="Met à jour les informations d'un rôle spécifique."
 )
-async def update_role(role_id: int, role_update: RoleUpdate, db: AsyncSession = Depends(get_async_db)):
+async def update_role(role_id: int, role: RoleUpdate, db: AsyncSession = Depends(get_async_db)):
     """
-    Met à jour un rôle spécifique.
+    Met à jour un rôle.
 
     - **role_id**: ID du rôle à mettre à jour.
-    - **role_update**: Schéma de mise à jour du rôle.
+    - **role**: Données à mettre à jour (nom et/ou IDs des permissions).
     - **Réponses**:
-        - **200**: Rôle mis à jour avec succès.
+        - **200**: Rôle mis à jour (ex. `{"id": 1, "nom": "ADMIN", "permissions": [{"id": 1, "nom": "MANAGE_USERS"}]}`).
         - **404**: Rôle non trouvé.
-        - **400**: Données invalides.
-        - **409**: Nom de rôle déjà utilisé.
-        - **500**: Erreur interne du serveur.
+        - **409**: Nom de rôle existe déjà.
+        - **500**: Erreur interne.
     """
-    return await role_service.update(db, role_id, role_update)
+    return await role_service.update(db, role_id, role)
 
 @router.delete(
     "/roles/{role_id}",
@@ -535,51 +533,53 @@ async def update_role(role_id: int, role_update: RoleUpdate, db: AsyncSession = 
 )
 async def delete_role(role_id: int, db: AsyncSession = Depends(get_async_db)):
     """
-    Supprime un rôle spécifique.
+    Supprime un rôle.
 
     - **role_id**: ID du rôle à supprimer.
     - **Réponses**:
-        - **204**: Rôle supprimé avec succès.
+        - **204**: Rôle supprimé.
         - **404**: Rôle non trouvé.
-        - **500**: Erreur interne du serveur.
+        - **500**: Erreur interne.
     """
     await role_service.delete(db, role_id)
 
 @router.post(
-    "/roles/{role_id}/assign-permissions",
+    "/roles/{role_id}/permissions",
     response_model=str,
     tags=["Rôles"],
     summary="Assigner des permissions à un rôle",
-    description="Assigne une liste de permissions à un rôle sans doublons."
+    description="Assigne une ou plusieurs permissions à un rôle spécifique."
 )
-async def assign_permissions_to_role(role_id: int, permission_ids: List[int], db: AsyncSession = Depends(get_async_db)):
+async def assign_permissions(role_id: int, permission_ids: List[int], db: AsyncSession = Depends(get_async_db)):
     """
-    Assigne plusieurs permissions à un rôle sans doublons.
-    - **role_id**: ID du rôle
-    - **permission_ids**: Liste des IDs de permissions à assigner
+    Assigne des permissions à un rôle.
+
+    - **role_id**: ID du rôle.
+    - **permission_ids**: Liste des IDs des permissions à assigner.
     - **Réponses**:
-        - **200**: Permissions assignées avec succès
-        - **404**: Rôle ou permission non trouvé
-        - **500**: Erreur interne du serveur
+        - **200**: Message de succès (ex. `"2 permission(s) assignée(s) au rôle ADMIN avec succès"`).
+        - **404**: Rôle ou permissions non trouvés.
+        - **500**: Erreur interne.
     """
     return await role_service.assign_permission(db, role_id, permission_ids)
 
-@router.post(
-    "/roles/{role_id}/revoke-permissions",
+@router.delete(
+    "/roles/{role_id}/permissions",
     response_model=str,
     tags=["Rôles"],
     summary="Révoquer des permissions d'un rôle",
-    description="Révoque une liste de permissions d'un rôle."
+    description="Révoque une ou plusieurs permissions d'un rôle spécifique."
 )
-async def revoke_permissions_from_role(role_id: int, permission_ids: List[int], db: AsyncSession = Depends(get_async_db)):
+async def revoke_permissions(role_id: int, permission_ids: List[int], db: AsyncSession = Depends(get_async_db)):
     """
-    Révoque plusieurs permissions d'un rôle.
-    - **role_id**: ID du rôle
-    - **permission_ids**: Liste des IDs de permissions à révoquer
+    Révoque des permissions d'un rôle.
+
+    - **role_id**: ID du rôle.
+    - **permission_ids**: Liste des IDs des permissions à révoquer.
     - **Réponses**:
-        - **200**: Permissions révoquées avec succès
-        - **404**: Rôle ou permission non trouvé
-        - **500**: Erreur interne du serveur
+        - **200**: Message de succès (ex. `"2 permission(s) révoquée(s) du rôle ADMIN avec succès"`).
+        - **404**: Rôle non trouvé.
+        - **500**: Erreur interne.
     """
     return await role_service.revoke_permission(db, role_id, permission_ids)
 

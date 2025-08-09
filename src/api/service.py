@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy import insert, delete
+from sqlalchemy import func, insert, delete
 from fastapi import HTTPException, Request, UploadFile, status
 from passlib.context import CryptContext
 import logging
@@ -892,7 +892,21 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                     db_obj.permissions = permissions.scalars().all()
                 await db.flush()
                 await db.refresh(db_obj)
-                return await self._safe_from_orm(db_obj, RoleLight)
+                user_count_query = select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.id)
+                user_count_result = await db.execute(user_count_query)
+                user_count = user_count_result.scalar()
+                return RoleLight(
+                    id=db_obj.id,
+                    nom=db_obj.nom,
+                    permissions=[perm.nom for perm in db_obj.permissions],
+                    user_count=user_count
+                )
+            except IntegrityError:
+                logger.error(f"Erreur d'intégrité lors de la création du rôle: {obj_in.nom}")
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Rôle avec nom '{obj_in.nom}' existe déjà"
+                )
             except SQLAlchemyError as e:
                 logger.error(f"Erreur lors de la création du rôle: {str(e)}")
                 raise HTTPException(
@@ -900,9 +914,62 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                     detail="Erreur lors de la création du rôle"
                 )
 
+    async def get(self, db: AsyncSession, id: int) -> RoleLight:
+        """Récupère un rôle par ID avec ses permissions et le nombre d'utilisateurs."""
+        try:
+            query = select(self.model).filter(self.model.id == id).options(
+                selectinload(self.model.permissions)
+            )
+            result = await db.execute(query)
+            db_obj = result.scalars().first()
+            if not db_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"{self.entity_name} avec l'ID {id} non trouvé"
+                )
+            user_count_query = select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.id)
+            user_count_result = await db.execute(user_count_query)
+            user_count = user_count_result.scalar()
+            return RoleLight(
+                id=db_obj.id,
+                nom=db_obj.nom,
+                permissions=[perm.nom for perm in db_obj.permissions],
+                user_count=user_count
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la récupération de {self.entity_name}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erreur de base de données lors de la récupération de {self.entity_name}"
+            )
+
     async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[RoleLight]:
-        """Récupère tous les rôles avec leurs permissions."""
-        return await super().get_all(db, skip, limit, [RoleModel.permissions, RoleModel.utilisateurs])
+        """Récupère tous les rôles avec leurs permissions et le nombre d'utilisateurs associés."""
+        try:
+            query = select(self.model).offset(skip).limit(limit).options(
+                selectinload(self.model.permissions)
+            )
+            result = await db.execute(query)
+            roles = result.scalars().all()
+            role_list = []
+            for role in roles:
+                user_count_query = select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == role.id)
+                user_count_result = await db.execute(user_count_query)
+                user_count = user_count_result.scalar()
+                role_light = RoleLight(
+                    id=role.id,
+                    nom=role.nom,
+                    permissions=[perm.nom for perm in role.permissions],
+                    user_count=user_count
+                )
+                role_list.append(role_light)
+            return role_list
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la récupération des {self.entity_name}s: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erreur de base de données lors de la récupération des {self.entity_name}s"
+            )
 
     async def update(self, db: AsyncSession, id: int, obj_in: RoleUpdate) -> Role:
         """Met à jour un rôle avec ses permissions."""
@@ -922,7 +989,13 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                     setattr(db_obj, key, value)
                 await db.flush()
                 await db.refresh(db_obj)
-                return await self._safe_from_orm(db_obj, Role)
+                return await self._safe_from_orm(db_obj, self.schema)
+            except IntegrityError:
+                logger.error(f"Erreur d'intégrité lors de la mise à jour du rôle: {id}")
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Rôle avec nom existe déjà"
+                )
             except SQLAlchemyError as e:
                 logger.error(f"Erreur lors de la mise à jour du rôle: {str(e)}")
                 raise HTTPException(
@@ -930,16 +1003,26 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                     detail="Erreur lors de la mise à jour du rôle"
                 )
 
+    async def delete(self, db: AsyncSession, id: int) -> None:
+        """Supprime un rôle par ID."""
+        async with db.begin():
+            try:
+                db_obj = await self.get_or_404(db, id)
+                await db.delete(db_obj)
+                await db.flush()
+            except SQLAlchemyError as e:
+                logger.error(f"Erreur de base de données lors de la suppression de {self.entity_name}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Erreur de base de données lors de la suppression de {self.entity_name}"
+                )
+
     async def assign_permission(self, db: AsyncSession, role_id: int, permission_ids: List[int]) -> str:
         """Assigne plusieurs permissions à un rôle sans doublons."""
         async with db.begin():
             try:
-                # Charger le rôle avec ses permissions pour éviter l'erreur MissingGreenlet
-                from sqlalchemy.orm import selectinload
                 result = await db.execute(
-                    select(RoleModel)
-                    .options(selectinload(RoleModel.permissions))
-                    .where(RoleModel.id == role_id)
+                    select(RoleModel).options(selectinload(RoleModel.permissions)).where(RoleModel.id == role_id)
                 )
                 db_role = result.scalars().first()
                 if not db_role:
@@ -966,8 +1049,6 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                         detail=f"Permissions avec IDs {missing_ids} non trouvées"
                     )
                 
-                # Utiliser insert directement sur la table d'association au lieu de db_role.permissions.extend()
-                # pour éviter l'erreur MissingGreenlet
                 for permission in permissions:
                     await db.execute(
                         insert(association_roles_permissions).values(
@@ -988,12 +1069,8 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
         """Révoque plusieurs permissions d'un rôle."""
         async with db.begin():
             try:
-                # Charger le rôle avec ses permissions pour éviter l'erreur MissingGreenlet
-                from sqlalchemy.orm import selectinload
                 result = await db.execute(
-                    select(RoleModel)
-                    .options(selectinload(RoleModel.permissions))
-                    .where(RoleModel.id == role_id)
+                    select(RoleModel).options(selectinload(RoleModel.permissions)).where(RoleModel.id == role_id)
                 )
                 db_role = result.scalars().first()
                 if not db_role:
@@ -1008,16 +1085,15 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                 if not permissions_to_remove:
                     return f"Aucune permission à révoquer pour le rôle {db_role.nom}"
                 
-                permissions = await db.execute(
-                    select(PermissionModel).filter(PermissionModel.id.in_(permissions_to_remove))
-                )
-                permissions = permissions.scalars().all()
-                
-                for permission in permissions:
-                    db_role.permissions.remove(permission)
+                for permission_id in permissions_to_remove:
+                    await db.execute(
+                        delete(association_roles_permissions).where(
+                            (association_roles_permissions.c.role_id == role_id) &
+                            (association_roles_permissions.c.permission_id == permission_id)
+                        )
+                    )
                 
                 await db.flush()
-                await db.refresh(db_role)
                 return f"{len(permissions_to_remove)} permission(s) révoquée(s) du rôle {db_role.nom} avec succès"
             except SQLAlchemyError as e:
                 logger.error(f"Erreur lors de la révocation des permissions du rôle {role_id}: {str(e)}")
@@ -1025,7 +1101,7 @@ class RoleService(BaseService[RoleModel, Role, RoleCreate, RoleUpdate]):
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Erreur lors de la révocation des permissions du rôle"
                 )
-  
+
 # ============================================================================
 # ========================= SERVICE DES UTILISATEURS =========================
 # ============================================================================
