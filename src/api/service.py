@@ -1115,11 +1115,12 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         """Génère un mot de passe aléatoire (lettres + chiffres uniquement)."""
         alphabet = string.ascii_letters + string.digits
         return ''.join(secrets.choice(alphabet) for _ in range(12))
-    
-    # Ajouter cette méthode dans la classe UtilisateurService
-    async def _check_role_by_name(self, db: AsyncSession, role_name: str) -> RoleLight:
+
+    async def _check_role_by_name(self, db: AsyncSession, role_name: str) -> RoleModel:
         """Vérifie si un rôle existe par son nom et retourne l'objet RoleModel."""
-        query = select(RoleModel).filter(RoleModel.nom == role_name)
+        query = select(RoleModel).filter(RoleModel.nom == role_name).options(
+            selectinload(RoleModel.permissions)
+        )
         result = await db.execute(query)
         role = result.scalars().first()
         if not role:
@@ -1129,55 +1130,61 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
             )
         return role
 
-    # Remplacer la méthode create existante dans UtilisateurService
     async def create(self, db: AsyncSession, obj_in: UtilisateurCreate) -> UtilisateurLight:
         """Crée un nouvel utilisateur avec validation et envoie un email avec le mot de passe."""
-        # Vérifier l'unicité de l'email
         await self.check_unique(db, "email", obj_in.email, "email")
         role = await self._check_role_by_name(db, obj_in.role_name)
-       
-        # Générer un mot de passe si non fourni
         password = self._generate_password()
         hashed_password = pwd_context.hash(password)
-        
-        # Préparer les données de l'utilisateur
         obj_data = obj_in.dict(exclude_unset=True)
-        obj_data['password'] = hashed_password
+        obj_data['hashed_password'] = hashed_password
         obj_data['role_id'] = role.id
         if 'role_name' in obj_data:
             del obj_data['role_name']
-        
         try:
             db_obj = self.model(**obj_data)
             db.add(db_obj)
             await db.flush()
-            await db.refresh(db_obj)
-            
-            # Envoi de l'email de bienvenue avec le mot de passe
+            # Eagerly reload user with relationships
+            query = select(self.model).filter(self.model.id == db_obj.id).options(
+                selectinload(self.model.role).selectinload(RoleModel.permissions),
+                selectinload(self.model.permissions)
+            )
+            result = await db.execute(query)
+            db_obj = result.scalars().first()
+            # Send email
             email_service = EmailService()
             try:
                 await email_service.send_new_user_email(obj_in.email, password, "fr")
-                
             except Exception as e:
                 logger.warning(f"Échec de l'envoi de l'email à {obj_in.email}: {str(e)}")
-                # Ne pas échouer la création si l'email ne s'envoie pas
             finally:
                 await email_service.close()
-            
-            # Recharger l'utilisateur avec ses relations pour éviter MissingGreenlet
-            from sqlalchemy.future import select
-            from sqlalchemy.orm import selectinload
-            result = await db.execute(
-                select(self.model)
-                .options(
-                    selectinload(self.model.permissions),
-                    selectinload(self.model.role)
+            # Manual serialization
+            role_light = None
+            if db_obj.role:
+                role_light = RoleLight(
+                    id=db_obj.role.id,
+                    nom=db_obj.role.nom,
+                    permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.role.permissions],
+                    user_count=(await db.execute(
+                        select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
+                    )).scalar()
                 )
-                .where(self.model.id == db_obj.id)
+            return UtilisateurLight(
+                id=db_obj.id,
+                nom=db_obj.nom,
+                prenom=db_obj.prenom,
+                sexe=db_obj.sexe,
+                email=db_obj.email,
+                statut=db_obj.statut,
+                est_actif=db_obj.est_actif,
+                date_naissance=db_obj.date_naissance,
+                created_at=db_obj.created_at,
+                updated_at=db_obj.updated_at,
+                role=role_light,
+                permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in db_obj.permissions]
             )
-            db_obj = result.scalars().first()
-            
-            return self.light_schema.from_orm(db_obj)
         except IntegrityError as e:
             logger.error(f"Erreur d'intégrité lors de la création de l'utilisateur: {str(e)}", exc_info=True)
             raise HTTPException(
@@ -1246,11 +1253,9 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
     async def change_user_status(self, db: AsyncSession, user_id: int, statut: StatutCompteEnum) -> UtilisateurLight:
         """Change le statut d'un utilisateur et retourne l'utilisateur mis à jour."""
         try:
-            # Use eager loading to avoid lazy loading issues
-            from sqlalchemy.orm import selectinload
-            query = select(UtilisateurModel).filter(UtilisateurModel.id == user_id).options(
-                selectinload(UtilisateurModel.role),
-                selectinload(UtilisateurModel.permissions)
+            query = select(self.model).filter(self.model.id == user_id).options(
+                selectinload(self.model.role).selectinload(RoleModel.permissions),
+                selectinload(self.model.permissions)
             )
             result = await db.execute(query)
             db_obj = result.scalars().first()
@@ -1259,19 +1264,41 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Utilisateur non trouvé"
                 )
-            
             db_obj.statut = statut
             db.add(db_obj)
             await db.flush()
-            await db.refresh(db_obj)
-            return UtilisateurLight.from_orm(db_obj)
+            # Manual serialization
+            role_light = None
+            if db_obj.role:
+                role_light = RoleLight(
+                    id=db_obj.role.id,
+                    nom=db_obj.role.nom,
+                    permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.role.permissions],
+                    user_count=(await db.execute(
+                        select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
+                    )).scalar()
+                )
+            return UtilisateurLight(
+                id=db_obj.id,
+                nom=db_obj.nom,
+                prenom=db_obj.prenom,
+                sexe=db_obj.sexe,
+                email=db_obj.email,
+                statut=db_obj.statut,
+                est_actif=db_obj.est_actif,
+                date_naissance=db_obj.date_naissance,
+                created_at=db_obj.created_at,
+                updated_at=db_obj.updated_at,
+                role=role_light,
+                permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in db_obj.permissions]
+            )
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors du changement de statut de l'utilisateur: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Erreur lors du changement de statut de l'utilisateur"
             )
-            
+
     async def update(self, db: AsyncSession, id: int, obj_in: UtilisateurUpdate) -> Utilisateur:
         """Met à jour un utilisateur avec validation."""
         async with db.begin():
@@ -1281,8 +1308,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                     await self.check_unique(db, "email", obj_in.email, "email")
                 update_data = obj_in.dict(exclude_unset=True)
                 if "password" in update_data:
-                    db_obj.password = pwd_context.hash(obj_in.password)
-                    del update_data["password"]
+                    update_data["hashed_password"] = pwd_context.hash(update_data.pop("password"))
                 if "permission_ids" in update_data:
                     permissions = await db.execute(
                         select(PermissionModel).filter(PermissionModel.id.in_(obj_in.permission_ids))
@@ -1294,24 +1320,60 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                 for key, value in update_data.items():
                     setattr(db_obj, key, value)
                 await db.flush()
-                await db.refresh(db_obj)
-                # Use eager loading to avoid lazy loading issues
-                from sqlalchemy.orm import selectinload
-                query = select(UtilisateurModel).filter(UtilisateurModel.id == id).options(
-                    selectinload(UtilisateurModel.role),
-                    selectinload(UtilisateurModel.permissions),
-                    selectinload(UtilisateurModel.inscriptions),
-                    selectinload(UtilisateurModel.genotypes),
-                    selectinload(UtilisateurModel.plans_intervention),
-                    selectinload(UtilisateurModel.actualites),
-                    selectinload(UtilisateurModel.accreditations),
-                    selectinload(UtilisateurModel.chefs_d_oeuvre),
-                    selectinload(UtilisateurModel.projets_collectifs),
-                    selectinload(UtilisateurModel.resultats_evaluations)
+                # Eagerly reload user with relationships
+                query = select(self.model).filter(self.model.id == id).options(
+                    selectinload(self.model.role).selectinload(RoleModel.permissions),
+                    selectinload(self.model.permissions),
+                    selectinload(self.model.inscriptions),
+                    selectinload(self.model.genotypes),
+                    selectinload(self.model.plans_intervention),
+                    selectinload(self.model.actualites),
+                    selectinload(self.model.accreditations),
+                    selectinload(self.model.chefs_d_oeuvre),
+                    selectinload(self.model.projets_collectifs),
+                    selectinload(self.model.resultats_evaluations)
                 )
                 result = await db.execute(query)
-                updated_user = result.scalars().first()
-                return Utilisateur.from_orm(updated_user)
+                db_obj = result.scalars().first()
+                # Manual serialization
+                role = None
+                if db_obj.role:
+                    role = RoleLight(
+                        id=db_obj.role.id,
+                        nom=db_obj.role.nom,
+                        permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.role.permissions],
+                        user_count=(await db.execute(
+                            select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
+                        )).scalar()
+                    )
+                return Utilisateur(
+                    id=db_obj.id,
+                    nom=db_obj.nom,
+                    prenom=db_obj.prenom,
+                    sexe=db_obj.sexe,
+                    email=db_obj.email,
+                    statut=db_obj.statut,
+                    est_actif=db_obj.est_actif,
+                    date_naissance=db_obj.date_naissance,
+                    created_at=db_obj.created_at,
+                    updated_at=db_obj.updated_at,
+                    role=role,
+                    permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in db_obj.permissions],
+                    inscriptions=[InscriptionFormationLight.from_orm(i) for i in db_obj.inscriptions],
+                    genotypes=[GenotypeIndividuelLight.from_orm(g) for g in db_obj.genotypes],
+                    plans_intervention=[PlanInterventionIndividualiseLight.from_orm(p) for p in db_obj.plans_intervention],
+                    actualites=[ActualiteLight.from_orm(a) for a in db_obj.actualites],
+                    accreditations=[AccreditationLight.from_orm(a) for a in db_obj.accreditations],
+                    chefs_d_oeuvre=[ChefDOeuvreLight.from_orm(c) for c in db_obj.chefs_d_oeuvre],
+                    projets_collectifs=[ProjetCollectifLight.from_orm(p) for p in db_obj.projets_collectifs],
+                    resultats_evaluations=[ResultatEvaluationLight.from_orm(r) for r in db_obj.resultats_evaluations]
+                )
+            except IntegrityError:
+                logger.error(f"Erreur d'intégrité lors de la mise à jour de l'utilisateur: {id}")
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Utilisateur avec cet email existe déjà"
+                )
             except SQLAlchemyError as e:
                 logger.error(f"Erreur lors de la mise à jour de l'utilisateur: {str(e)}")
                 raise HTTPException(
@@ -1324,12 +1386,12 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         async with db.begin():
             try:
                 db_obj = await self.get_or_404(db, utilisateur_id)
-                if not pwd_context.verify(current_password, db_obj.password):
+                if not pwd_context.verify(current_password, db_obj.hashed_password):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Mot de passe actuel incorrect"
                     )
-                db_obj.password = pwd_context.hash(new_password)
+                db_obj.hashed_password = pwd_context.hash(new_password)
                 await db.flush()
                 return f"Le mot de passe de l'utilisateur {db_obj.nom} {db_obj.prenom} a été changé avec succès"
             except SQLAlchemyError as e:
@@ -1343,7 +1405,10 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         """Confirme la réinitialisation du mot de passe avec un token."""
         async with db.begin():
             try:
-                query = select(UtilisateurModel).filter(UtilisateurModel.reset_token == reset_token)
+                query = select(self.model).filter(self.model.reset_token == reset_token).options(
+                    selectinload(self.model.role).selectinload(RoleModel.permissions),
+                    selectinload(self.model.permissions)
+                )
                 result = await db.execute(query)
                 db_obj = result.scalars().first()
                 if not db_obj or db_obj.reset_token_expiry < datetime.now(timezone.utc):
@@ -1352,14 +1417,15 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                         detail="Token de réinitialisation invalide ou expiré"
                     )
                 new_password = self._generate_password()
-                db_obj.password = pwd_context.hash(new_password)
+                db_obj.hashed_password = pwd_context.hash(new_password)
                 db_obj.reset_token = None
                 db_obj.reset_token_expiry = None
                 await db.flush()
-                # Send email with new password
                 email_service = EmailService()
-                await email_service.send_password_reset(db_obj.email, new_password, "fr")
-                await email_service.close()
+                try:
+                    await email_service.send_password_reset(db_obj.email, new_password, "fr")
+                finally:
+                    await email_service.close()
             except SQLAlchemyError as e:
                 logger.error(f"Erreur lors de la confirmation de réinitialisation: {str(e)}")
                 raise HTTPException(
@@ -1370,54 +1436,37 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
     async def assign_permissions(self, db: AsyncSession, user_id: int, permission_ids: List[int]) -> str:
         """Assigne des permissions directement à un utilisateur."""
         try:
-            # Vérifier que l'utilisateur existe
             db_obj = await self.get_or_404(db, user_id)
-            
-            # Récupérer les permissions à assigner
             permissions = await db.execute(
                 select(PermissionModel).filter(PermissionModel.id.in_(permission_ids))
             )
             permission_objects = permissions.scalars().all()
-            
             if not permission_objects:
-                # Récupérer toutes les permissions disponibles pour donner plus d'informations
                 all_permissions = await db.execute(select(PermissionModel))
                 available_permissions = all_permissions.scalars().all()
                 available_ids = [p.id for p in available_permissions]
                 available_names = [p.nom.value for p in available_permissions]
-                
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Aucune permission valide fournie. IDs demandés: {permission_ids}. Permissions disponibles: {available_names} (IDs: {available_ids})"
                 )
-            
-            # Charger explicitement les permissions de l'utilisateur pour éviter le lazy loading
-            # qui cause l'erreur MissingGreenlet
             user_permissions_query = await db.execute(
                 select(PermissionModel)
                 .join(association_utilisateurs_permissions)
                 .filter(association_utilisateurs_permissions.c.utilisateur_id == user_id)
             )
-            current_permissions = user_permissions_query.scalars().all()
-            
-            # Ajouter les permissions à l'utilisateur (éviter les doublons)
-            current_permission_ids = [p.id for p in current_permissions]
+            current_permission_ids = {p.id for p in user_permissions_query.scalars().all()}
             for permission in permission_objects:
                 if permission.id not in current_permission_ids:
-                    # Utiliser insert directement sur la table d'association au lieu de db_obj.permissions.append()
-                    # pour éviter l'erreur MissingGreenlet
                     await db.execute(
                         insert(association_utilisateurs_permissions).values(
                             utilisateur_id=user_id,
                             permission_id=permission.id
                         )
                     )
-            
             await db.flush()
-            
             permission_names = [p.nom.value for p in permission_objects]
             return f"Permissions {', '.join(permission_names)} assignées avec succès à l'utilisateur {db_obj.nom} {db_obj.prenom}"
-            
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de l'assignation des permissions: {str(e)}")
             raise HTTPException(
@@ -1428,59 +1477,41 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
     async def revoke_permissions(self, db: AsyncSession, user_id: int, permission_ids: List[int]) -> str:
         """Révoque des permissions directement d'un utilisateur."""
         try:
-            # Vérifier que l'utilisateur existe
             db_obj = await self.get_or_404(db, user_id)
-            
-            # Récupérer les permissions à révoquer
             permissions = await db.execute(
                 select(PermissionModel).filter(PermissionModel.id.in_(permission_ids))
             )
             permission_objects = permissions.scalars().all()
-            
             if not permission_objects:
-                # Récupérer toutes les permissions disponibles pour donner plus d'informations
                 all_permissions = await db.execute(select(PermissionModel))
                 available_permissions = all_permissions.scalars().all()
                 available_ids = [p.id for p in available_permissions]
                 available_names = [p.nom.value for p in available_permissions]
-                
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Aucune permission valide fournie. IDs demandés: {permission_ids}. Permissions disponibles: {available_names} (IDs: {available_ids})"
                 )
-            
-            # Charger explicitement les permissions de l'utilisateur pour éviter le lazy loading
-            # qui cause l'erreur MissingGreenlet
             user_permissions_query = await db.execute(
                 select(PermissionModel)
                 .join(association_utilisateurs_permissions)
                 .filter(association_utilisateurs_permissions.c.utilisateur_id == user_id)
             )
-            current_permissions = user_permissions_query.scalars().all()
-            current_permission_ids = {p.id: p for p in current_permissions}
-            
-            # Retirer les permissions de l'utilisateur
+            current_permission_ids = {p.id: p for p in user_permissions_query.scalars().all()}
             revoked_permissions = []
             for permission in permission_objects:
                 if permission.id in current_permission_ids:
-                    # Utiliser une suppression directe sur la table d'association au lieu de db_obj.permissions.remove()
-                    # pour éviter l'erreur MissingGreenlet
                     await db.execute(
-                        association_utilisateurs_permissions.delete().where(
+                        delete(association_utilisateurs_permissions).where(
                             (association_utilisateurs_permissions.c.utilisateur_id == user_id) &
                             (association_utilisateurs_permissions.c.permission_id == permission.id)
                         )
                     )
                     revoked_permissions.append(permission)
-            
             await db.flush()
-            
             if revoked_permissions:
                 permission_names = [p.nom.value for p in revoked_permissions]
                 return f"Permissions {', '.join(permission_names)} révoquées avec succès de l'utilisateur {db_obj.nom} {db_obj.prenom}"
-            else:
-                return f"Aucune permission n'a été révoquée de l'utilisateur {db_obj.nom} {db_obj.prenom}"
-            
+            return f"Aucune permission n'a été révoquée de l'utilisateur {db_obj.nom} {db_obj.prenom}"
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de la révocation des permissions: {str(e)}")
             raise HTTPException(
@@ -1489,55 +1520,52 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
             )
 
     async def login(self, db: AsyncSession, account: loginSchema) -> dict:
-            """Authentifie un utilisateur et retourne un token JWT."""
-            try:
-                query = select(UtilisateurModel).filter(UtilisateurModel.email == account.email)
-                result = await db.execute(query)
-                db_obj = result.scalars().first()
-                if not db_obj:
-                    logger.warning(f"Tentative de connexion avec email non trouvé: {account.email}")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Email ou mot de passe incorrect"
-                    )
-                if not pwd_context.verify(account.password, db_obj.password):
-                    logger.warning(f"Mot de passe incorrect pour l'utilisateur: {account.email}")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Email ou mot de passe incorrect"
-                    )
-                
-                # Vérifier si le compte est actif
-                if db_obj.statut != StatutCompteEnum.ACTIF:
-                    logger.warning(f"Tentative de connexion avec un compte inactif: {account.email}, statut: {db_obj.statut}")
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Votre compte n'est pas actif. Veuillez contacter l'administrateur."
-                    )
-                
-                # Générer le token JWT
-                payload = {
-                    "sub": str(db_obj.id),
-                    "email": db_obj.email,
-                    "exp": datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-                }
-                token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-                logger.info(f"Connexion réussie pour l'utilisateur: {account.email}")
-                return {
-                    "access_token": token,
-                    "token_type": "bearer"
-                }
-            except SQLAlchemyError as e:
-                logger.error(f"Erreur de base de données lors de la connexion: {str(e)}")
+        """Authentifie un utilisateur et retourne un token JWT."""
+        try:
+            query = select(self.model).filter(self.model.email == account.email).options(
+                selectinload(self.model.role).selectinload(RoleModel.permissions),
+                selectinload(self.model.permissions)
+            )
+            result = await db.execute(query)
+            db_obj = result.scalars().first()
+            if not db_obj:
+                logger.warning(f"Tentative de connexion avec email non trouvé: {account.email}")
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Erreur lors de la connexion"
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Email ou mot de passe incorrect"
                 )
-                
-    async def get_current_user(self, db, token: str):
-        from jose import jwt, JWTError
-        from fastapi import HTTPException, status
-        from src.util.database.setting import settings
+            if not pwd_context.verify(account.password, db_obj.hashed_password):
+                logger.warning(f"Mot de passe incorrect pour l'utilisateur: {account.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Email ou mot de passe incorrect"
+                )
+            if db_obj.statut != StatutCompteEnum.ACTIF:
+                logger.warning(f"Tentative de connexion avec un compte inactif: {account.email}, statut: {db_obj.statut}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Votre compte n'est pas actif. Veuillez contacter l'administrateur."
+                )
+            payload = {
+                "sub": str(db_obj.id),
+                "email": db_obj.email,
+                "exp": datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            }
+            token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+            logger.info(f"Connexion réussie pour l'utilisateur: {account.email}")
+            return {
+                "access_token": token,
+                "token_type": "bearer"
+            }
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur de base de données lors de la connexion: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erreur lors de la connexion"
+            )
+
+    async def get_current_user(self, db: AsyncSession, token: str):
+        """Récupère l'utilisateur connecté à partir du token JWT."""
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             user_id = int(payload.get("sub"))
@@ -1545,24 +1573,46 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
         except JWTError:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
-        from sqlalchemy.future import select
-        from sqlalchemy.orm import selectinload
-        result = await db.execute(
-            select(self.model)
-            .options(
-                selectinload(self.model.permissions),
-                selectinload(self.model.role)
-            )
-            .where(self.model.id == user_id)
+        query = select(self.model).filter(self.model.id == user_id).options(
+            selectinload(self.model.role).selectinload(RoleModel.permissions),
+            selectinload(self.model.permissions)
         )
+        result = await db.execute(query)
         user = result.scalars().first()
         if user is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur non trouvé")
-        return self.light_schema.from_orm(user)
+        role_light = None
+        if user.role:
+            role_light = RoleLight(
+                id=user.role.id,
+                nom=user.role.nom,
+                permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in user.role.permissions],
+                user_count=(await db.execute(
+                    select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == user.role.id)
+                )).scalar()
+            )
+        return UtilisateurLight(
+            id=user.id,
+            nom=user.nom,
+            prenom=user.prenom,
+            sexe=user.sexe,
+            email=user.email,
+            statut=user.statut,
+            est_actif=user.est_actif,
+            date_naissance=user.date_naissance,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+            role=role_light,
+            permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in user.permissions]
+        )
 
-    async def send_reset_link(self, db: AsyncSession, email: str, request) -> None:
+    async def send_reset_link(self, db: AsyncSession, email: str, request: Request) -> None:
+        """Envoie un lien de réinitialisation de mot de passe."""
         try:
-            query = select(UtilisateurModel).filter(UtilisateurModel.email == email)
+            query = select(self.model).filter(self.model.email == email).options(
+                selectinload(self.model.role).selectinload(RoleModel.permissions),
+                selectinload(self.model.permissions)
+            )
             result = await db.execute(query)
             db_obj = result.scalars().first()
             if not db_obj:
@@ -1571,16 +1621,17 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
             db_obj.reset_token = reset_token
             db_obj.reset_token_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
             await db.flush()
-            # Construire le lien dynamiquement selon le domaine du backend
             base_url = str(request.base_url).rstrip("/")
             reset_link = f"{base_url}/reset-password-confirm?token={reset_token}"
             email_service = EmailService()
             content = f"Pour réinitialiser votre mot de passe, cliquez sur ce lien : <a href='{reset_link}'>Réinitialiser le mot de passe</a>\nCe lien expirera dans 1 heure."
-            await email_service.send_custom_email(db_obj.email, "Réinitialisation de mot de passe", content, title="Réinitialisation de mot de passe", language="fr")
-            await email_service.close()
+            try:
+                await email_service.send_custom_email(db_obj.email, "Réinitialisation de mot de passe", content, title="Réinitialisation de mot de passe", language="fr")
+            finally:
+                await email_service.close()
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de l'envoi du lien de réinitialisation: {str(e)}")
-            # Ne pas lever d'exception pour ne pas révéler l'existence de l'email
+            # Do not raise exception to avoid revealing email existence
 
 # ============================================================================
 # ========================= SERVICE DES FORMATIONS ===========================

@@ -70,65 +70,6 @@ router = APIRouter()
 # ============================================================================
 # ========================= ROUTES DES UTILISATEURS ==========================
 # ============================================================================
-@router.put(
-    "/users/{user_id}/status",
-    response_model=UtilisateurLight,
-    tags=["Utilisateurs"],
-    summary="Changer le statut d'un utilisateur",
-    description="Modifie le statut d'un utilisateur spécifique (actif, inactif, supprimer)."
-)
-async def change_user_status(user_id: int, statut: StatutCompteEnum, db: AsyncSession = Depends(get_async_db)):
-    """
-    Change le statut d'un utilisateur.
-
-    - **user_id**: ID de l'utilisateur à modifier.
-    - **statut**: Nouveau statut (actif, inactif, supprimer).
-    - **Réponses**:
-        - **200**: Statut mis à jour avec succès (ex. `{"id": 1, "nom": "Doe", "statut": "actif"}`).
-        - **404**: Utilisateur non trouvé.
-        - **400**: Statut invalide.
-        - **500**: Erreur interne du serveur.
-    """
-    return await utilisateur_service.change_user_status(db, user_id, statut)
-
-@router.post(
-    "/login",
-    response_model=dict,
-    tags=["Utilisateurs"],
-    summary="Connexion d'un utilisateur",
-    description="Authentifie un utilisateur avec son email et mot de passe, retourne un token JWT."
-)
-async def login(form_data: loginSchema, db: AsyncSession = Depends(get_async_db)):
-    """
-    Authentifie un utilisateur et génère un token JWT.
-
-    - **form_data**: Contient l'email et le mot de passe de l'utilisateur.
-    - **Réponses**:
-        - **200**: Token JWT généré avec succès (ex. `{"access_token": "jwt_token", "token_type": "bearer"}`).
-        - **401**: Email ou mot de passe incorrect.
-        - **500**: Erreur interne du serveur.
-    """
-    return await utilisateur_service.login(db, form_data)
-
-@router.get(
-    "/users/me",
-    response_model=UtilisateurLight,
-    tags=["Utilisateurs"],
-    summary="Récupérer l'utilisateur connecté",
-    description="Retourne les informations de l'utilisateur connecté, incluant ses permissions (directes et via rôle)."
-)
-async def read_users_me(token: str, db: AsyncSession = Depends(get_async_db)):
-    """
-    Récupère les informations de l'utilisateur connecté à partir du token JWT.
-
-    - **token**: Token JWT fourni dans l'en-tête Authorization.
-    - **Réponses**:
-        - **200**: Informations de l'utilisateur connecté (ex. `{"id": 1, "nom": "Doe", "prenom": "John", ...}`).
-        - **401**: Token invalide ou expiré.
-        - **500**: Erreur interne du serveur.
-    """
-    return await utilisateur_service.get_current_user(db, token)
-
 @router.post(
     "/users",
     response_model=UtilisateurLight,
@@ -228,6 +169,65 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_async_db)):
     """
     await utilisateur_service.delete(db, user_id)
 
+@router.put(
+    "/users/{user_id}/status",
+    response_model=UtilisateurLight,
+    tags=["Utilisateurs"],
+    summary="Changer le statut d'un utilisateur",
+    description="Modifie le statut d'un utilisateur spécifique (actif, inactif, supprimer)."
+)
+async def change_user_status(user_id: int, statut: StatutCompteEnum, db: AsyncSession = Depends(get_async_db)):
+    """
+    Change le statut d'un utilisateur.
+
+    - **user_id**: ID de l'utilisateur à modifier.
+    - **statut**: Nouveau statut (actif, inactif, supprimer).
+    - **Réponses**:
+        - **200**: Statut mis à jour avec succès (ex. `{"id": 1, "nom": "Doe", "statut": "actif"}`).
+        - **404**: Utilisateur non trouvé.
+        - **400**: Statut invalide.
+        - **500**: Erreur interne du serveur.
+    """
+    return await utilisateur_service.change_user_status(db, user_id, statut)
+
+@router.post(
+    "/login",
+    response_model=dict,
+    tags=["Utilisateurs"],
+    summary="Connexion d'un utilisateur",
+    description="Authentifie un utilisateur avec son email et mot de passe, retourne un token JWT."
+)
+async def login(form_data: loginSchema, db: AsyncSession = Depends(get_async_db)):
+    """
+    Authentifie un utilisateur et génère un token JWT.
+
+    - **form_data**: Contient l'email et le mot de passe de l'utilisateur.
+    - **Réponses**:
+        - **200**: Token JWT généré avec succès (ex. `{"access_token": "jwt_token", "token_type": "bearer"}`).
+        - **401**: Email ou mot de passe incorrect.
+        - **500**: Erreur interne du serveur.
+    """
+    return await utilisateur_service.login(db, form_data)
+
+@router.get(
+    "/users/me",
+    response_model=UtilisateurLight,
+    tags=["Utilisateurs"],
+    summary="Récupérer l'utilisateur connecté",
+    description="Retourne les informations de l'utilisateur connecté, incluant ses permissions (directes et via rôle)."
+)
+async def read_users_me(token: str, db: AsyncSession = Depends(get_async_db)):
+    """
+    Récupère les informations de l'utilisateur connecté à partir du token JWT.
+
+    - **token**: Token JWT fourni dans l'en-tête Authorization.
+    - **Réponses**:
+        - **200**: Informations de l'utilisateur connecté (ex. `{"id": 1, "nom": "Doe", "prenom": "John", ...}`).
+        - **401**: Token invalide ou expiré.
+        - **500**: Erreur interne du serveur.
+    """
+    return await utilisateur_service.get_current_user(db, token)
+
 @router.post(
     "/users/{user_id}/assign-permissions",
     response_model=str,
@@ -238,10 +238,6 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_async_db)):
 async def assign_permissions_to_user(user_id: int, permission_ids: List[int], db: AsyncSession = Depends(get_async_db)):
     """
     Assigne des permissions directement à un utilisateur.
-
-    Cette fonction permet d'assigner des permissions spécifiques à un utilisateur,
-    en plus de celles qu'il hérite de son rôle. Les permissions sont ajoutées
-    sans créer de doublons si elles existent déjà.
 
     - **user_id**: ID de l'utilisateur à qui assigner les permissions.
     - **permission_ids**: Liste des IDs des permissions à assigner.
@@ -264,10 +260,6 @@ async def revoke_permissions_from_user(user_id: int, permission_ids: List[int], 
     """
     Révoque des permissions directement d'un utilisateur.
 
-    Cette fonction permet de révoquer des permissions spécifiques d'un utilisateur,
-    sans affecter celles qu'il hérite de son rôle. Seules les permissions
-    directement assignées à l'utilisateur sont révoquées.
-
     - **user_id**: ID de l'utilisateur de qui révoquer les permissions.
     - **permission_ids**: Liste des IDs des permissions à révoquer.
     - **Réponses**:
@@ -277,7 +269,6 @@ async def revoke_permissions_from_user(user_id: int, permission_ids: List[int], 
         - **500**: Erreur interne du serveur.
     """
     return await utilisateur_service.revoke_permissions(db, user_id, permission_ids)
-
 
 @router.post(
     "/users/change-password",
@@ -309,6 +300,14 @@ async def change_password(body: ChangePasswordSchema, db: AsyncSession = Depends
     description="Envoie un email avec un lien de réinitialisation de mot de passe si l'email existe."
 )
 async def reset_password_request(request: Request, body: ResetPasswordRequestSchema, db: AsyncSession = Depends(get_async_db)):
+    """
+    Demande la réinitialisation du mot de passe.
+
+    - **email**: Email de l'utilisateur.
+    - **Réponses**:
+        - **200**: Lien de réinitialisation envoyé si l'email existe (ex. `{"message": "Si l'email existe, un lien de réinitialisation a été envoyé."}`).
+        - **500**: Erreur interne du serveur.
+    """
     await utilisateur_service.send_reset_link(db, body.email, request)
     return {"message": "Si l'email existe, un lien de réinitialisation a été envoyé."}
 
@@ -320,8 +319,18 @@ async def reset_password_request(request: Request, body: ResetPasswordRequestSch
     description="Valide le token, génère un nouveau mot de passe, l'envoie par email, et invalide le token."
 )
 async def reset_password_confirm(token: str, db: AsyncSession = Depends(get_async_db)):
+    """
+    Confirme la réinitialisation du mot de passe.
+
+    - **token**: Token de réinitialisation.
+    - **Réponses**:
+        - **200**: Mot de passe réinitialisé (ex. `{"message": "Votre mot de passe a été réinitialisé et envoyé par email."}`).
+        - **400**: Token invalide ou expiré.
+        - **500**: Erreur interne du serveur.
+    """
     await utilisateur_service.confirm_reset_password(db, token)
     return {"message": "Votre mot de passe a été réinitialisé et envoyé par email."}
+
 
 # ============================================================================
 # ========================= ROUTES DES PERMISSIONS ===========================
