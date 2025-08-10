@@ -89,7 +89,9 @@ class BaseService(Generic[ModelType, SchemaType, CreateSchemaType, UpdateSchemaT
         """Récupère une entité par ID ou lève une erreur 404."""
         model = model or self.model
         entity_name = entity_name or self.entity_name
-        query = select(model).filter(model.id == id)
+        query = select(model).filter(model.id == id).options(
+            selectinload("*")  # Charge toutes les relations définies
+        )
         result = await db.execute(query)
         entity = result.scalars().first()
         if not entity:
@@ -169,11 +171,11 @@ class BaseService(Generic[ModelType, SchemaType, CreateSchemaType, UpdateSchemaT
     async def _safe_from_orm(self, db_obj, schema_class):
         """Sérialise un objet SQLAlchemy de manière sûre en évitant les relations lazy."""
         try:
-            return schema_class.from_orm(db_obj)
+            return schema_class.model_validate(db_obj)
         except Exception as e:
             if "MissingGreenlet" in str(e) or "greenlet_spawn" in str(e):
                 # Si c'est un problème de relation lazy, utiliser le light_schema
-                return self.light_schema.from_orm(db_obj)
+                return self.light_schema.model_validate(db_obj)
             else:
                 raise e
 
@@ -182,7 +184,6 @@ class BaseService(Generic[ModelType, SchemaType, CreateSchemaType, UpdateSchemaT
         try:
             db_obj = await self.get_or_404(db, id)
             update_data = obj_in.model_dump(exclude_unset=True)
-            
             for key, value in update_data.items():
                 setattr(db_obj, key, value)
             db.add(db_obj)
@@ -1117,64 +1118,257 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         alphabet = string.ascii_letters + string.digits
         return ''.join(secrets.choice(alphabet) for _ in range(12))
 
-    async def _check_role_by_name(self, db: AsyncSession, role_name: str) -> RoleModel:
+    # Ajouter cette méthode dans la classe UtilisateurService
+    async def _check_role_by_name(self, db: AsyncSession, role_name: str) -> RoleLight:
         """Vérifie si un rôle existe par son nom et retourne l'objet RoleModel."""
-        query = select(RoleModel).filter(RoleModel.nom == role_name).options(
-            selectinload(RoleModel.permissions)
-        )
+        query = select(RoleModel).filter(RoleModel.nom == role_name)
         result = await db.execute(query)
         role = result.scalars().first()
         if not role:
             raise HTTPException(
-                status_code=404,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Rôle avec le nom '{role_name}' non trouvé"
             )
         return role
 
-    async def update(self, db: AsyncSession, id: int, obj_in: UtilisateurUpdate) -> Utilisateur:
-        try:
-            # Use model classes for selectinload
-            query = select(self.model).filter(self.model.id == id).options(
-                selectinload(self.model.inscriptions).selectinload(InscriptionFormationModel.formation),  # <-- Fix: Use InscriptionFormationModel
-                selectinload(self.model.inscriptions).selectinload(InscriptionFormationModel.paiements),  # Fix similarly
-                selectinload(self.model.genotypes),
-                selectinload(self.model.plans_intervention),
-                selectinload(self.model.actualites),
-                selectinload(self.model.accreditations),
-                selectinload(self.model.chefs_d_oeuvre),
-                selectinload(self.model.projets_collectifs),
-                selectinload(self.model.resultats_evaluations),
-                selectinload(self.model.permissions),
-                selectinload(self.model.role).selectinload(RoleModel.permissions)
-            )
-            result = await db.execute(query)
-            db_obj = result.scalars().first()
-            if not db_obj:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"{self.entity_name} avec l'ID {id} non trouvé"
+    async def create(self, db: AsyncSession, obj_in: UtilisateurCreate) -> UtilisateurLight:
+        """Crée un nouvel utilisateur avec validation et envoie un email avec le mot de passe."""
+        async with db.begin():
+            try:
+                # Vérifier l'unicité de l'email
+                await self.check_unique(db, "email", obj_in.email, "email")
+                role = await self._check_role_by_name(db, obj_in.role_name)
+
+                # Générer un mot de passe si non fourni
+                password = self._generate_password()
+                hashed_password = pwd_context.hash(password)
+
+                # Préparer les données de l'utilisateur
+                obj_data = obj_in.model_dump(exclude_unset=True)
+                obj_data['password'] = hashed_password
+                obj_data['role_id'] = role.id
+                obj_data['statut'] = StatutCompteEnum.ACTIF
+                obj_data['est_actif'] = True
+                if 'role_name' in obj_data:
+                    del obj_data['role_name']
+
+                db_obj = self.model(**obj_data)
+                db.add(db_obj)
+                await db.flush()
+
+                # Recharger l'utilisateur avec ses relations pour éviter MissingGreenlet
+                query = select(self.model).filter(self.model.id == db_obj.id).options(
+                    selectinload(self.model.role).selectinload(RoleModel.permissions),
+                    selectinload(self.model.permissions)
+                )
+                result = await db.execute(query)
+                db_obj = result.scalars().first()
+
+                # Construire la réponse manuellement pour éviter les problèmes de lazy loading
+                role_light = None
+                if db_obj.role:
+                    role_light = RoleLight(
+                        id=db_obj.role.id,
+                        nom=db_obj.role.nom,
+                        permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.role.permissions],
+                        user_count=(await db.execute(
+                            select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
+                        )).scalar()
+                    )
+
+                user_light = UtilisateurLight(
+                    id=db_obj.id,
+                    nom=db_obj.nom,
+                    prenom=db_obj.prenom,
+                    sexe=db_obj.sexe,
+                    email=db_obj.email,
+                    statut=db_obj.statut,
+                    est_actif=db_obj.est_actif,
+                    date_naissance=db_obj.date_naissance,
+                    created_at=db_obj.created_at,
+                    updated_at=db_obj.updated_at,
+                    role=role_light,
+                    permissions=[PermissionLight(id=perm.id, nom=perm.nom) for perm in db_obj.permissions]
                 )
 
-            # Proceed with update...
-            update_data = obj_in.model_dump(exclude_unset=True)
-            for key, value in update_data.items():
-                setattr(db_obj, key, value)
-            db.add(db_obj)
-            await db.flush()
-            await db.refresh(db_obj)
-            return await self._safe_from_orm(db_obj, self.schema)
-        except IntegrityError as e:
-            logger.error(f"Erreur d'intégrité lors de la création de l'utilisateur: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=409,
-                detail="Utilisateur avec cet email existe déjà"
-            )
-        except SQLAlchemyError as e:
-            logger.error(f"Erreur de base de données lors de la création de l'utilisateur: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=500,
-                detail="Erreur de base de données lors de la création de l'utilisateur"
-            )
+                # Envoi de l'email de bienvenue avec le mot de passe (en arrière-plan)
+                try:
+                    email_service = EmailService()
+                    await email_service.send_new_user_email(obj_in.email, password, "fr")
+                    await email_service.close()
+                except Exception as e:
+                    logger.warning(f"Échec de l'envoi de l'email à {obj_in.email}: {str(e)}")
+                    # Ne pas échouer la création si l'email ne s'envoie pas
+
+                return user_light
+            except IntegrityError as e:
+                logger.error(f"Erreur d'intégrité lors de la création de l'utilisateur: {str(e)}", exc_info=True)
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Utilisateur avec cet email existe déjà"
+                )
+            except SQLAlchemyError as e:
+                logger.error(f"Erreur de base de données lors de la création de l'utilisateur: {str(e)}", exc_info=True)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Erreur de base de données lors de la création de l'utilisateur"
+                )
+    
+    async def update(self, db: AsyncSession, id: int, obj_in: UtilisateurUpdate) -> Utilisateur:
+        """Met à jour un utilisateur avec validation."""
+        async with db.begin():
+            try:
+                db_obj = await self.get_or_404(db, id)
+                if obj_in.email and obj_in.email != db_obj.email:
+                    await self.check_unique(db, "email", obj_in.email, "email")
+                update_data = obj_in.model_dump(exclude_unset=True)
+                if "password" in update_data:
+                    db_obj.password = pwd_context.hash(obj_in.password)
+                    del update_data["password"]
+                if "permission_ids" in update_data:
+                    permissions = await db.execute(
+                        select(PermissionModel).filter(PermissionModel.id.in_(obj_in.permission_ids))
+                    )
+                    db_obj.permissions = permissions.scalars().all()
+                    del update_data["permission_ids"]
+                if "role_id" in update_data and obj_in.role_id is not None:
+                    await self.get_or_404(db, obj_in.role_id, RoleModel, "Rôle")
+                for key, value in update_data.items():
+                    setattr(db_obj, key, value)
+                await db.flush()
+                await db.refresh(db_obj)
+                # Use eager loading to avoid lazy loading issues
+                query = select(UtilisateurModel).filter(UtilisateurModel.id == id).options(
+                    selectinload(UtilisateurModel.role).selectinload(RoleModel.permissions),
+                    selectinload(UtilisateurModel.permissions),
+                    selectinload(UtilisateurModel.inscriptions).selectinload(InscriptionFormationModel.formation),
+                    selectinload(UtilisateurModel.inscriptions).selectinload(InscriptionFormationModel.paiements),
+                    selectinload(UtilisateurModel.genotypes),
+                    selectinload(UtilisateurModel.plans_intervention),
+                    selectinload(UtilisateurModel.actualites),
+                    selectinload(UtilisateurModel.accreditations),
+                    selectinload(UtilisateurModel.chefs_d_oeuvre),
+                    selectinload(UtilisateurModel.projets_collectifs),
+                    selectinload(UtilisateurModel.resultats_evaluations)
+                )
+                result = await db.execute(query)
+                updated_user = result.scalars().first()
+
+                # Construire la réponse manuellement pour éviter les problèmes de lazy loading
+                role = None
+                if updated_user.role:
+                    role = RoleLight(
+                        id=updated_user.role.id,
+                        nom=updated_user.role.nom,
+                        permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in updated_user.role.permissions],
+                        user_count=(await db.execute(
+                            select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == updated_user.role.id)
+                        )).scalar()
+                    )
+
+                # Serialize inscriptions with explicit handling
+                inscriptions = []
+                for inscription in updated_user.inscriptions:
+                    formation = None
+                    if inscription.formation:
+                        formation = FormationLight(
+                            id=inscription.formation.id,
+                            titre=inscription.formation.titre,
+                            specialite=inscription.formation.specialite,
+                            statut=inscription.formation.statut,
+                            frais=inscription.formation.frais,
+                            photo_couverture=inscription.formation.photo_couverture,
+                            description=inscription.formation.description
+                        )
+                    paiements = [
+                        PaiementLight(
+                            id=paiement.id,
+                            inscription_id=paiement.inscription_id,
+                            montant=paiement.montant,
+                            methode_paiement=paiement.methode_paiement,
+                            reference_transaction=paiement.reference_transaction,
+                            date_paiement=paiement.date_paiement,
+                            created_at=paiement.created_at,
+                            updated_at=paiement.updated_at
+                        ) for paiement in inscription.paiements
+                    ]
+                    inscriptions.append(InscriptionFormationLight(
+                        id=inscription.id,
+                        utilisateur_id=inscription.utilisateur_id,
+                        formation_id=inscription.formation_id,
+                        statut=inscription.statut,
+                        progression=inscription.progression,
+                        date_inscription=inscription.date_inscription,
+                        date_dernier_acces=inscription.date_dernier_acces,
+                        note_finale=inscription.note_finale,
+                        heures_formation=inscription.heures_formation,
+                        montant_verse=inscription.montant_verse,
+                        statut_paiement=inscription.statut_paiement,
+                        created_at=inscription.created_at,
+                        updated_at=inscription.updated_at,
+                        formation=formation,
+                        paiements=paiements
+                    ))
+
+                return Utilisateur(
+                    id=updated_user.id,
+                    nom=updated_user.nom,
+                    prenom=updated_user.prenom,
+                    sexe=updated_user.sexe,
+                    email=updated_user.email,
+                    password=updated_user.password,
+                    statut=updated_user.statut,
+                    est_actif=updated_user.est_actif,
+                    last_password_change=updated_user.last_password_change,
+                    date_naissance=updated_user.date_naissance,
+                    created_at=updated_user.created_at,
+                    updated_at=updated_user.updated_at,
+                    role=role,
+                    permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in updated_user.permissions],
+                    inscriptions=inscriptions,
+                    genotypes=[GenotypeIndividuelLight(
+                        id=g.id,
+                        utilisateur_id=g.utilisateur_id,
+                        type_genotype=g.type_genotype,
+                        created_at=g.created_at,
+                        updated_at=g.updated_at
+                    ) for g in updated_user.genotypes],
+                    plans_intervention=[PlanInterventionIndividualiseLight(
+                        id=p.id,
+                        utilisateur_id=p.utilisateur_id,
+                        objectifs=p.objectifs,
+                        strategies=p.strategies,
+                        ressources=p.ressources,
+                        echeances=p.echeances,
+                        created_at=p.created_at,
+                        updated_at=p.updated_at
+                    ) for p in updated_user.plans_intervention],
+                    actualites=[ActualiteLight(
+                        id=a.id,
+                        utilisateur_id=a.utilisateur_id,
+                        titre=a.titre,
+                        contenu=a.contenu,
+                        date_publication=a.date_publication,
+                        created_at=a.created_at,
+                        updated_at=a.updated_at
+                    ) for a in updated_user.actualites],
+                    accreditations=[AccreditationLight(
+                        id=acc.id,
+                        utilisateur_id=acc.utilisateur_id,
+                        nom=acc.nom,
+                        organisme=acc.organisme,
+                        date_obtention=acc.date_obtention,
+                        date_expiration=acc.date_expiration,
+                        created_at=acc.created_at,
+                        updated_at=acc.updated_at
+                    ) for acc in updated_user.accreditations]
+                )
+            except SQLAlchemyError as e:
+                logger.error(f"Erreur lors de la mise à jour de l'utilisateur: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Erreur lors de la mise à jour de l'utilisateur"
+                )
 
     async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[UtilisateurLight]:
         """Récupère tous les utilisateurs avec leurs relations."""
@@ -1277,130 +1471,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                 detail="Erreur lors du changement de statut de l'utilisateur"
             )
 
-    async def update(self, db: AsyncSession, id: int, obj_in: UtilisateurUpdate) -> Utilisateur:
-        """Met à jour un utilisateur avec validation."""
-        async with db.begin():
-            try:
-                # Fetch user with eager loading of all relationships
-                query = select(self.model).filter(self.model.id == id).options(
-                    selectinload(self.model.role).selectinload(RoleModel.permissions),
-                    selectinload(self.model.permissions),
-                    selectinload(self.model.inscriptions).selectinload(InscriptionFormationModel.formation),
-                    selectinload(self.model.inscriptions).selectinload(InscriptionFormationModel.paiements),
-                    selectinload(self.model.genotypes),
-                    selectinload(self.model.plans_intervention),
-                    selectinload(self.model.actualites),
-                    selectinload(self.model.accreditations),
-                    selectinload(self.model.chefs_d_oeuvre),
-                    selectinload(self.model.projets_collectifs),
-                    selectinload(self.model.resultats_evaluations)
-                )
-                result = await db.execute(query)
-                db_obj = result.scalars().first()
-                if not db_obj:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Utilisateur non trouvé"
-                    )
 
-                # Validate and update user data
-                if obj_in.email and obj_in.email != db_obj.email:
-                    await self.check_unique(db, "email", obj_in.email, "email")
-                update_data = obj_in.dict(exclude_unset=True)
-                if "password" in update_data:
-                    update_data["password"] = pwd_context.hash(update_data.pop("password"))  # Use 'password' field
-                if "permission_ids" in update_data:
-                    permissions = await db.execute(
-                        select(PermissionModel).filter(PermissionModel.id.in_(obj_in.permission_ids))
-                    )
-                    db_obj.permissions = permissions.scalars().all()
-                    del update_data["permission_ids"]
-                if "role_id" in update_data and obj_in.role_id is not None:
-                    await self.get_or_404(db, obj_in.role_id, RoleModel, "Rôle")
-                for key, value in update_data.items():
-                    setattr(db_obj, key, value)
-                await db.flush()
-
-                # Manual serialization to avoid lazy-loading issues
-                role = None
-                if db_obj.role:
-                    role = RoleLight(
-                        id=db_obj.role.id,
-                        nom=db_obj.role.nom,
-                        permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.role.permissions],
-                        user_count=(await db.execute(
-                            select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
-                        )).scalar()
-                    )
-
-                # Serialize inscriptions with explicit handling
-                inscriptions = []
-                for inscription in db_obj.inscriptions:
-                    formation = None
-                    if inscription.formation:
-                        formation = FormationLight(
-                            id=inscription.formation.id,
-                            titre=inscription.formation.titre,
-                            specialite=inscription.formation.specialite,
-                            statut=inscription.formation.statut,
-                            frais=inscription.formation.frais,
-                            photo_couverture=inscription.formation.photo_couverture,
-                            description=inscription.formation.description
-                        )
-                    paiements = [
-                        PaiementLight(  # Adjust based on your PaiementLight model
-                            id=paiement.id,
-                            montant=paiement.montant,
-                            # Add other fields as needed
-                        ) for paiement in inscription.paiements
-                    ]
-                    inscriptions.append(InscriptionFormationLight(
-                        id=inscription.id,
-                        formation=formation,
-                        paiements=paiements,
-                        # Add other fields as needed
-                    ))
-
-                return Utilisateur(
-                    id=db_obj.id,
-                    nom=db_obj.nom,
-                    prenom=db_obj.prenom,
-                    sexe=db_obj.sexe,
-                    email=db_obj.email,
-                    statut=db_obj.statut,
-                    est_actif=db_obj.est_actif,
-                    date_naissance=db_obj.date_naissance,
-                    created_at=db_obj.created_at,
-                    updated_at=db_obj.updated_at,
-                    role=role,
-                    permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in db_obj.permissions],
-                    inscriptions=inscriptions,
-                    genotypes=[GenotypeIndividuelLight.from_orm(g) for g in db_obj.genotypes],
-                    plans_intervention=[PlanInterventionIndividualiseLight.from_orm(p) for p in db_obj.plans_intervention],
-                    actualites=[ActualiteLight.from_orm(a) for a in db_obj.actualites],
-                    accreditations=[AccreditationLight.from_orm(a) for a in db_obj.accreditations],
-                    chefs_d_oeuvre=[ChefDOeuvreLight.from_orm(c) for c in db_obj.chefs_d_oeuvre],
-                    projets_collectifs=[ProjetCollectifLight.from_orm(p) for p in db_obj.projets_collectifs],
-                    resultats_evaluations=[ResultatEvaluationLight.from_orm(r) for r in db_obj.resultats_evaluations]
-                )
-            except IntegrityError:
-                logger.error(f"Erreur d'intégrité lors de la mise à jour de l'utilisateur: {id}")
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Utilisateur avec cet email existe déjà"
-                )
-            except SQLAlchemyError as e:
-                logger.error(f"Erreur lors de la mise à jour de l'utilisateur: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Erreur lors de la mise à jour de l'utilisateur"
-                )
-            except ValidationError as e:
-                logger.error(f"Erreur de validation Pydantic: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Erreur de validation: {str(e)}"
-                )
 
     async def change_password(self, db: AsyncSession, utilisateur_id: int, current_password: str, new_password: str) -> str:
         """Change le mot de passe d'un utilisateur après vérification."""
