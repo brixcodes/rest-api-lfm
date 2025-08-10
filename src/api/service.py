@@ -1424,6 +1424,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
 
     async def change_user_status(self, db: AsyncSession, user_id: int, statut: StatutCompteEnum) -> UtilisateurLight:
         """Change le statut d'un utilisateur et retourne l'utilisateur mis à jour."""
+        logger.info(f"Changement de statut - user_id: {user_id}, statut: {statut}, type: {type(statut)}")
         async with db.begin():
             try:
                 query = select(self.model).filter(self.model.id == user_id).options(
@@ -1438,6 +1439,8 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                         detail="Utilisateur non trouvé"
                     )
                 db_obj.statut = statut
+                # Mettre à jour est_actif en fonction du statut
+                db_obj.est_actif = (statut == StatutCompteEnum.ACTIF)
                 db.add(db_obj)
                 await db.flush()
                 # Manual serialization
