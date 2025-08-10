@@ -249,6 +249,7 @@ async def assign_permissions_to_user(user_id: int, permission_ids: List[int], db
         - **404**: Utilisateur non trouvé.
         - **500**: Erreur interne du serveur.
     """
+    logger.info(f"Assign permissions - user_id: {user_id}, permission_ids: {permission_ids}")
     return await utilisateur_service.assign_permissions(db, user_id, permission_ids)
 
 @router.post(
