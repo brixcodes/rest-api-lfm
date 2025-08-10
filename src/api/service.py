@@ -8,6 +8,7 @@ import string
 from typing import TypeVar, Generic, List, Type, Any, Optional
 from uuid import uuid4
 import uuid
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -16,7 +17,7 @@ from sqlalchemy import func, insert, delete
 from fastapi import HTTPException, Request, UploadFile, status
 from passlib.context import CryptContext
 import logging
-from jose import jwt
+from jose import JWTError, jwt
 from src.util.database.setting import settings
 from src.util.helper.enum import (
     FileTypeEnum, StatutCompteEnum, StatutFormationEnum, StatutInscriptionEnum,
@@ -1125,76 +1126,53 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         role = result.scalars().first()
         if not role:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail=f"Rôle avec le nom '{role_name}' non trouvé"
             )
         return role
 
-    async def create(self, db: AsyncSession, obj_in: UtilisateurCreate) -> UtilisateurLight:
-        """Crée un nouvel utilisateur avec validation et envoie un email avec le mot de passe."""
-        await self.check_unique(db, "email", obj_in.email, "email")
-        role = await self._check_role_by_name(db, obj_in.role_name)
-        password = self._generate_password()
-        hashed_password = pwd_context.hash(password)
-        obj_data = obj_in.dict(exclude_unset=True)
-        obj_data['hashed_password'] = hashed_password
-        obj_data['role_id'] = role.id
-        if 'role_name' in obj_data:
-            del obj_data['role_name']
+    async def update(self, db: AsyncSession, id: int, obj_in: UtilisateurUpdate) -> Utilisateur:
         try:
-            db_obj = self.model(**obj_data)
-            db.add(db_obj)
-            await db.flush()
-            # Eagerly reload user with relationships
-            query = select(self.model).filter(self.model.id == db_obj.id).options(
-                selectinload(self.model.role).selectinload(RoleModel.permissions),
-                selectinload(self.model.permissions)
+            # Use model classes for selectinload
+            query = select(self.model).filter(self.model.id == id).options(
+                selectinload(self.model.inscriptions).selectinload(InscriptionFormationModel.formation),  # <-- Fix: Use InscriptionFormationModel
+                selectinload(self.model.inscriptions).selectinload(InscriptionFormationModel.paiements),  # Fix similarly
+                selectinload(self.model.genotypes),
+                selectinload(self.model.plans_intervention),
+                selectinload(self.model.actualites),
+                selectinload(self.model.accreditations),
+                selectinload(self.model.chefs_d_oeuvre),
+                selectinload(self.model.projets_collectifs),
+                selectinload(self.model.resultats_evaluations),
+                selectinload(self.model.permissions),
+                selectinload(self.model.role).selectinload(RoleModel.permissions)
             )
             result = await db.execute(query)
             db_obj = result.scalars().first()
-            # Send email
-            email_service = EmailService()
-            try:
-                await email_service.send_new_user_email(obj_in.email, password, "fr")
-            except Exception as e:
-                logger.warning(f"Échec de l'envoi de l'email à {obj_in.email}: {str(e)}")
-            finally:
-                await email_service.close()
-            # Manual serialization
-            role_light = None
-            if db_obj.role:
-                role_light = RoleLight(
-                    id=db_obj.role.id,
-                    nom=db_obj.role.nom,
-                    permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.role.permissions],
-                    user_count=(await db.execute(
-                        select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
-                    )).scalar()
+            if not db_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"{self.entity_name} avec l'ID {id} non trouvé"
                 )
-            return UtilisateurLight(
-                id=db_obj.id,
-                nom=db_obj.nom,
-                prenom=db_obj.prenom,
-                sexe=db_obj.sexe,
-                email=db_obj.email,
-                statut=db_obj.statut,
-                est_actif=db_obj.est_actif,
-                date_naissance=db_obj.date_naissance,
-                created_at=db_obj.created_at,
-                updated_at=db_obj.updated_at,
-                role=role_light,
-                permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in db_obj.permissions]
-            )
+
+            # Proceed with update...
+            update_data = obj_in.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(db_obj, key, value)
+            db.add(db_obj)
+            await db.flush()
+            await db.refresh(db_obj)
+            return await self._safe_from_orm(db_obj, self.schema)
         except IntegrityError as e:
             logger.error(f"Erreur d'intégrité lors de la création de l'utilisateur: {str(e)}", exc_info=True)
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
+                status_code=409,
                 detail="Utilisateur avec cet email existe déjà"
             )
         except SQLAlchemyError as e:
             logger.error(f"Erreur de base de données lors de la création de l'utilisateur: {str(e)}", exc_info=True)
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=500,
                 detail="Erreur de base de données lors de la création de l'utilisateur"
             )
 
@@ -1246,7 +1224,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         except SQLAlchemyError as e:
             logger.error(f"Erreur de base de données lors de la récupération des utilisateurs: {str(e)}", exc_info=True)
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=500,
                 detail="Erreur de base de données lors de la récupération des utilisateurs"
             )
 
@@ -1261,7 +1239,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
             db_obj = result.scalars().first()
             if not db_obj:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
+                    status_code=404,
                     detail="Utilisateur non trouvé"
                 )
             db_obj.statut = statut
@@ -1295,7 +1273,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors du changement de statut de l'utilisateur: {str(e)}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=500,
                 detail="Erreur lors du changement de statut de l'utilisateur"
             )
 
@@ -1303,12 +1281,34 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         """Met à jour un utilisateur avec validation."""
         async with db.begin():
             try:
-                db_obj = await self.get_or_404(db, id)
+                # Fetch user with eager loading of all relationships
+                query = select(self.model).filter(self.model.id == id).options(
+                    selectinload(self.model.role).selectinload(RoleModel.permissions),
+                    selectinload(self.model.permissions),
+                    selectinload(self.model.inscriptions).selectinload(InscriptionFormationModel.formation),
+                    selectinload(self.model.inscriptions).selectinload(InscriptionFormationModel.paiements),
+                    selectinload(self.model.genotypes),
+                    selectinload(self.model.plans_intervention),
+                    selectinload(self.model.actualites),
+                    selectinload(self.model.accreditations),
+                    selectinload(self.model.chefs_d_oeuvre),
+                    selectinload(self.model.projets_collectifs),
+                    selectinload(self.model.resultats_evaluations)
+                )
+                result = await db.execute(query)
+                db_obj = result.scalars().first()
+                if not db_obj:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Utilisateur non trouvé"
+                    )
+
+                # Validate and update user data
                 if obj_in.email and obj_in.email != db_obj.email:
                     await self.check_unique(db, "email", obj_in.email, "email")
                 update_data = obj_in.dict(exclude_unset=True)
                 if "password" in update_data:
-                    update_data["hashed_password"] = pwd_context.hash(update_data.pop("password"))
+                    update_data["password"] = pwd_context.hash(update_data.pop("password"))  # Use 'password' field
                 if "permission_ids" in update_data:
                     permissions = await db.execute(
                         select(PermissionModel).filter(PermissionModel.id.in_(obj_in.permission_ids))
@@ -1320,22 +1320,8 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                 for key, value in update_data.items():
                     setattr(db_obj, key, value)
                 await db.flush()
-                # Eagerly reload user with relationships
-                query = select(self.model).filter(self.model.id == id).options(
-                    selectinload(self.model.role).selectinload(RoleModel.permissions),
-                    selectinload(self.model.permissions),
-                    selectinload(self.model.inscriptions),
-                    selectinload(self.model.genotypes),
-                    selectinload(self.model.plans_intervention),
-                    selectinload(self.model.actualites),
-                    selectinload(self.model.accreditations),
-                    selectinload(self.model.chefs_d_oeuvre),
-                    selectinload(self.model.projets_collectifs),
-                    selectinload(self.model.resultats_evaluations)
-                )
-                result = await db.execute(query)
-                db_obj = result.scalars().first()
-                # Manual serialization
+
+                # Manual serialization to avoid lazy-loading issues
                 role = None
                 if db_obj.role:
                     role = RoleLight(
@@ -1346,6 +1332,35 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                             select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
                         )).scalar()
                     )
+
+                # Serialize inscriptions with explicit handling
+                inscriptions = []
+                for inscription in db_obj.inscriptions:
+                    formation = None
+                    if inscription.formation:
+                        formation = FormationLight(
+                            id=inscription.formation.id,
+                            titre=inscription.formation.titre,
+                            specialite=inscription.formation.specialite,
+                            statut=inscription.formation.statut,
+                            frais=inscription.formation.frais,
+                            photo_couverture=inscription.formation.photo_couverture,
+                            description=inscription.formation.description
+                        )
+                    paiements = [
+                        PaiementLight(  # Adjust based on your PaiementLight model
+                            id=paiement.id,
+                            montant=paiement.montant,
+                            # Add other fields as needed
+                        ) for paiement in inscription.paiements
+                    ]
+                    inscriptions.append(InscriptionFormationLight(
+                        id=inscription.id,
+                        formation=formation,
+                        paiements=paiements,
+                        # Add other fields as needed
+                    ))
+
                 return Utilisateur(
                     id=db_obj.id,
                     nom=db_obj.nom,
@@ -1359,7 +1374,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                     updated_at=db_obj.updated_at,
                     role=role,
                     permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in db_obj.permissions],
-                    inscriptions=[InscriptionFormationLight.from_orm(i) for i in db_obj.inscriptions],
+                    inscriptions=inscriptions,
                     genotypes=[GenotypeIndividuelLight.from_orm(g) for g in db_obj.genotypes],
                     plans_intervention=[PlanInterventionIndividualiseLight.from_orm(p) for p in db_obj.plans_intervention],
                     actualites=[ActualiteLight.from_orm(a) for a in db_obj.actualites],
@@ -1380,24 +1395,39 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Erreur lors de la mise à jour de l'utilisateur"
                 )
+            except ValidationError as e:
+                logger.error(f"Erreur de validation Pydantic: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Erreur de validation: {str(e)}"
+                )
 
     async def change_password(self, db: AsyncSession, utilisateur_id: int, current_password: str, new_password: str) -> str:
         """Change le mot de passe d'un utilisateur après vérification."""
-        async with db.begin():
-            try:
-                db_obj = await self.get_or_404(db, utilisateur_id)
-                if not pwd_context.verify(current_password, db_obj.hashed_password):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Mot de passe actuel incorrect"
-                    )
-                db_obj.hashed_password = pwd_context.hash(new_password)
-                await db.flush()
-                return f"Le mot de passe de l'utilisateur {db_obj.nom} {db_obj.prenom} a été changé avec succès"
-            except SQLAlchemyError as e:
+        try:
+            db_obj = await self.get_or_404(db, utilisateur_id)
+
+            # Debug: log pour vérifier les mots de passe
+            logger.info(f"Tentative de changement de mot de passe pour utilisateur ID: {utilisateur_id}")
+            logger.info(f"Mot de passe fourni: {current_password}")
+            logger.info(f"Hash en base: {db_obj.password}")
+
+            # Utiliser la même logique que le login
+            if not pwd_context.verify(current_password, db_obj.password):
+                logger.warning(f"Mot de passe incorrect pour l'utilisateur ID: {utilisateur_id}")
+                raise HTTPException(
+                    status_code=401,
+                    detail="Mot de passe actuel incorrect"
+                )
+
+            # Hasher le nouveau mot de passe
+            db_obj.password = pwd_context.hash(new_password)
+            await db.commit()
+            return f"Le mot de passe de l'utilisateur {db_obj.nom} {db_obj.prenom} a été changé avec succès"
+        except SQLAlchemyError as e:
                 logger.error(f"Erreur lors du changement de mot de passe: {str(e)}")
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    status_code=500,
                     detail="Erreur lors du changement de mot de passe"
                 )
 
@@ -1413,11 +1443,11 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                 db_obj = result.scalars().first()
                 if not db_obj or db_obj.reset_token_expiry < datetime.now(timezone.utc):
                     raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
+                        status_code=400,
                         detail="Token de réinitialisation invalide ou expiré"
                     )
                 new_password = self._generate_password()
-                db_obj.hashed_password = pwd_context.hash(new_password)
+                db_obj.password = pwd_context.hash(new_password)  # Changed from hashed_password to password
                 db_obj.reset_token = None
                 db_obj.reset_token_expiry = None
                 await db.flush()
@@ -1429,7 +1459,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
             except SQLAlchemyError as e:
                 logger.error(f"Erreur lors de la confirmation de réinitialisation: {str(e)}")
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    status_code=500,
                     detail="Erreur lors de la confirmation de réinitialisation"
                 )
 
@@ -1447,7 +1477,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                 available_ids = [p.id for p in available_permissions]
                 available_names = [p.nom.value for p in available_permissions]
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=400,
                     detail=f"Aucune permission valide fournie. IDs demandés: {permission_ids}. Permissions disponibles: {available_names} (IDs: {available_ids})"
                 )
             user_permissions_query = await db.execute(
@@ -1470,7 +1500,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de l'assignation des permissions: {str(e)}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=500,
                 detail="Erreur lors de l'assignation des permissions"
             )
 
@@ -1488,7 +1518,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                 available_ids = [p.id for p in available_permissions]
                 available_names = [p.nom.value for p in available_permissions]
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=400,
                     detail=f"Aucune permission valide fournie. IDs demandés: {permission_ids}. Permissions disponibles: {available_names} (IDs: {available_ids})"
                 )
             user_permissions_query = await db.execute(
@@ -1515,7 +1545,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de la révocation des permissions: {str(e)}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=500,
                 detail="Erreur lors de la révocation des permissions"
             )
 
@@ -1531,19 +1561,19 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
             if not db_obj:
                 logger.warning(f"Tentative de connexion avec email non trouvé: {account.email}")
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    status_code=401,
                     detail="Email ou mot de passe incorrect"
                 )
-            if not pwd_context.verify(account.password, db_obj.hashed_password):
+            if not pwd_context.verify(account.password, db_obj.password):  # Changed from hashed_password to password
                 logger.warning(f"Mot de passe incorrect pour l'utilisateur: {account.email}")
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    status_code=401,
                     detail="Email ou mot de passe incorrect"
                 )
             if db_obj.statut != StatutCompteEnum.ACTIF:
                 logger.warning(f"Tentative de connexion avec un compte inactif: {account.email}, statut: {db_obj.statut}")
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
+                    status_code=403,
                     detail="Votre compte n'est pas actif. Veuillez contacter l'administrateur."
                 )
             payload = {
@@ -1560,7 +1590,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         except SQLAlchemyError as e:
             logger.error(f"Erreur de base de données lors de la connexion: {str(e)}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=500,
                 detail="Erreur lors de la connexion"
             )
 
@@ -1570,9 +1600,9 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             user_id = int(payload.get("sub"))
             if user_id is None:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
+                raise HTTPException(status_code=401, detail="Token invalide")
         except JWTError:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Token invalide")
         query = select(self.model).filter(self.model.id == user_id).options(
             selectinload(self.model.role).selectinload(RoleModel.permissions),
             selectinload(self.model.permissions)
@@ -1580,7 +1610,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         result = await db.execute(query)
         user = result.scalars().first()
         if user is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur non trouvé")
+            raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
         role_light = None
         if user.role:
             role_light = RoleLight(
@@ -1632,7 +1662,7 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de l'envoi du lien de réinitialisation: {str(e)}")
             # Do not raise exception to avoid revealing email existence
-
+            
 # ============================================================================
 # ========================= SERVICE DES FORMATIONS ===========================
 # ============================================================================

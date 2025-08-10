@@ -91,6 +91,25 @@ async def create_user(user: UtilisateurCreate, db: AsyncSession = Depends(get_as
     return await utilisateur_service.create(db, user)
 
 @router.get(
+    "/users/me",
+    response_model=UtilisateurLight,
+    tags=["Utilisateurs"],
+    summary="Récupérer l'utilisateur connecté",
+    description="Retourne les informations de l'utilisateur connecté, incluant ses permissions (directes et via rôle)."
+)
+async def read_users_me(token: str, db: AsyncSession = Depends(get_async_db)):
+    """
+    Récupère les informations de l'utilisateur connecté à partir du token JWT.
+
+    - **token**: Token JWT fourni dans l'en-tête Authorization.
+    - **Réponses**:
+        - **200**: Informations de l'utilisateur connecté (ex. `{"id": 1, "nom": "Doe", "prenom": "John", ...}`).
+        - **401**: Token invalide ou expiré.
+        - **500**: Erreur interne du serveur.
+    """
+    return await utilisateur_service.get_current_user(db, token)
+
+@router.get(
     "/users/{user_id}",
     response_model=Utilisateur,
     tags=["Utilisateurs"],
@@ -209,24 +228,7 @@ async def login(form_data: loginSchema, db: AsyncSession = Depends(get_async_db)
     """
     return await utilisateur_service.login(db, form_data)
 
-@router.get(
-    "/users/me",
-    response_model=UtilisateurLight,
-    tags=["Utilisateurs"],
-    summary="Récupérer l'utilisateur connecté",
-    description="Retourne les informations de l'utilisateur connecté, incluant ses permissions (directes et via rôle)."
-)
-async def read_users_me(token: str, db: AsyncSession = Depends(get_async_db)):
-    """
-    Récupère les informations de l'utilisateur connecté à partir du token JWT.
 
-    - **token**: Token JWT fourni dans l'en-tête Authorization.
-    - **Réponses**:
-        - **200**: Informations de l'utilisateur connecté (ex. `{"id": 1, "nom": "Doe", "prenom": "John", ...}`).
-        - **401**: Token invalide ou expiré.
-        - **500**: Erreur interne du serveur.
-    """
-    return await utilisateur_service.get_current_user(db, token)
 
 @router.post(
     "/users/{user_id}/assign-permissions",
