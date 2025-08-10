@@ -72,10 +72,27 @@ async def run_migrations_online() -> None:
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
 
+def include_object(object, name, type_, reflected, compare_to):
+    # Ignore les changements de commentaire
+    if compare_to is not None:
+        if hasattr(object, "comment") and hasattr(compare_to, "comment"):
+            if object.comment != compare_to.comment:
+                return False
+
+    # Ignore les indexes générés automatiquement par PostgreSQL
+    if type_ == "index":
+        if name.endswith("_pkey") or name.endswith("_key"):
+            return False
+
+    return True
+
 def do_run_migrations(connection) -> None:
     context.configure(
         connection=connection,
-        target_metadata=target_metadata
+        target_metadata=target_metadata,
+        compare_type=True,
+        compare_server_default=True,
+        include_object=include_object
     )
     with context.begin_transaction():
         context.run_migrations()

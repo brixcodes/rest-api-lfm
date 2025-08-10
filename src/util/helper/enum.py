@@ -1,6 +1,8 @@
 from enum import Enum
 
-
+class TypeFormationEnum(str, Enum):
+    PRESENTIEL = "présentiel"
+    EN_LIGNE = "en_ligne"
 
 class PermissionEnum(str, Enum):
     """Permissions pour contrôler l'accès aux fonctionnalités."""

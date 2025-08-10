@@ -64,6 +64,12 @@ class UtilisateurLight(BaseModel):
     statut: StatutCompteEnum
     est_actif: bool
     date_naissance: Optional[date]
+    telephone: Optional[str] = None
+    nationalite: Optional[str] = None
+    pays: Optional[str] = None
+    region: Optional[str] = None
+    ville: Optional[str] = None
+    adresse: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     role: Optional[RoleLight]
@@ -254,6 +260,12 @@ class Utilisateur(BaseModel):
     est_actif: bool = True
     last_password_change: Optional[datetime] = None
     date_naissance: Optional[date] = None
+    telephone: Optional[str] = Field(None, max_length=30)
+    nationalite: Optional[str] = Field(None, max_length=100)
+    pays: Optional[str] = Field(None, max_length=100)
+    region: Optional[str] = Field(None, max_length=100)
+    ville: Optional[str] = Field(None, max_length=100)
+    adresse: Optional[str] = Field(None, max_length=255)
     created_at: datetime
     updated_at: datetime
     role: Optional[RoleLight] = None
@@ -540,6 +552,13 @@ class UtilisateurCreate(BaseModel):
     sexe: SexeEnum
     email: str = Field(..., max_length=255)
     role_name: RoleEnum
+    date_naissance: Optional[date] = None
+    telephone: Optional[str] = Field(None, max_length=30)
+    nationalite: Optional[str] = Field(None, max_length=100)
+    pays: Optional[str] = Field(None, max_length=100)
+    region: Optional[str] = Field(None, max_length=100)
+    ville: Optional[str] = Field(None, max_length=100)
+    adresse: Optional[str] = Field(None, max_length=255)
     class Config:
         from_attributes = True
 
@@ -778,6 +797,12 @@ class UtilisateurUpdate(BaseModel):
     statut: Optional[StatutCompteEnum] = None
     est_actif: Optional[bool] = None
     date_naissance: Optional[date] = None
+    telephone: Optional[str] = Field(None, max_length=30)
+    nationalite: Optional[str] = Field(None, max_length=100)
+    pays: Optional[str] = Field(None, max_length=100)
+    region: Optional[str] = Field(None, max_length=100)
+    ville: Optional[str] = Field(None, max_length=100)
+    adresse: Optional[str] = Field(None, max_length=255)
     role_id: Optional[int] = None
     permission_ids: Optional[List[int]] = None
     class Config:

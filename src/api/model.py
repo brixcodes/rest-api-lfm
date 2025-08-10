@@ -4,61 +4,74 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.util.helper.enum import (
-    EvaluationTypeEnum, GenotypeTypeEnum, PermissionEnum, FileTypeEnum, 
-    RoleEnum, SexeEnum, StatutCompteEnum, StatutEnum, StatutFormationEnum, 
-    StatutInscriptionEnum, StatutPaiementEnum, StatutProjetCollectifEnum, 
+    EvaluationTypeEnum, GenotypeTypeEnum, PermissionEnum, FileTypeEnum,
+    RoleEnum, SexeEnum, StatutCompteEnum, StatutEnum, StatutFormationEnum, TypeFormationEnum,
+    StatutInscriptionEnum, StatutPaiementEnum, StatutProjetCollectifEnum,
     StatutProjetIndividuelEnum, MethodePaiementEnum
 )
 from src.util.database.database import Base
 
-# ========================================================================    
+# ============================================================================
 # ========================= TABLES D’ASSOCIATION =========================
-# ======================================================================== 
+# ============================================================================
 
 association_roles_permissions = Table(
     "association_roles_permissions", Base.metadata,
     Column("role_id", Integer, ForeignKey("roles.id"), primary_key=True),
     Column("permission_id", Integer, ForeignKey("permissions.id"), primary_key=True),
-    comment="Associe rôles et permissions pour la gestion des droits."
 )
 
 association_utilisateurs_permissions = Table(
     "association_utilisateurs_permissions", Base.metadata,
     Column("utilisateur_id", Integer, ForeignKey("utilisateurs.id"), primary_key=True),
     Column("permission_id", Integer, ForeignKey("permissions.id"), primary_key=True),
-    comment="Associe permissions directes aux utilisateurs."
 )
 
 association_projets_collectifs_membres = Table(
     "association_projets_collectifs_membres", Base.metadata,
     Column("projet_collectif_id", Integer, ForeignKey("projets_collectifs.id"), primary_key=True),
     Column("utilisateur_id", Integer, ForeignKey("utilisateurs.id"), primary_key=True),
-    comment="Associe membres aux projets collectifs."
 )
 
-# ============================================================================    
+association_utilisateurs_formations = Table(
+    "association_utilisateurs_formations", Base.metadata,
+    Column("utilisateur_id", Integer, ForeignKey("utilisateurs.id"), primary_key=True),
+    Column("formation_id", Integer, ForeignKey("formations.id"), primary_key=True),
+)
+
+# ============================================================================
 # ========================= GESTION DES UTILISATEURS =========================
 # ============================================================================
 
 class Permission(Base):
+    """
+    Modèle pour les permissions des utilisateurs.
+    Définit les différents types de permissions que les utilisateurs peuvent avoir.
+    """
     __tablename__ = "permissions"
     id = Column(Integer, primary_key=True)
     nom = Column(Enum(PermissionEnum), unique=True, nullable=False)
-    __table_args__ = {'comment': "Permissions pour contrôle d'accès."}
 
-    roles = relationship("Role", secondary=association_roles_permissions, back_populates="permissions", lazy='select')
-    utilisateurs = relationship("Utilisateur", secondary=association_utilisateurs_permissions, back_populates="permissions", lazy='select')
+    roles = relationship("Role", secondary=association_roles_permissions, back_populates="permissions")
+    utilisateurs = relationship("Utilisateur", secondary=association_utilisateurs_permissions, back_populates="permissions")
 
 class Role(Base):
+    """
+    Modèle pour les rôles des utilisateurs.
+    Définit les rôles que les utilisateurs peuvent avoir, comme apprenant, formateur, ou administrateur.
+    """
     __tablename__ = "roles"
     id = Column(Integer, primary_key=True)
     nom = Column(Enum(RoleEnum), unique=True, nullable=False)
-    __table_args__ = {'comment': "Rôles des utilisateurs avec permissions associées."}
 
-    permissions = relationship("Permission", secondary=association_roles_permissions, back_populates="roles", lazy='select')
-    utilisateurs = relationship("Utilisateur", back_populates="role", lazy='select')
+    permissions = relationship("Permission", secondary=association_roles_permissions, back_populates="roles")
+    utilisateurs = relationship("Utilisateur", back_populates="role")
 
 class Utilisateur(Base):
+    """
+    Modèle pour les utilisateurs.
+    Stocke les informations des utilisateurs, y compris leurs rôles et permissions.
+    """
     __tablename__ = "utilisateurs"
     id = Column(Integer, primary_key=True)
     nom = Column(String(255), nullable=False)
@@ -70,29 +83,42 @@ class Utilisateur(Base):
     est_actif = Column(Boolean, default=True)
     last_password_change = Column(DateTime(timezone=True), nullable=True)
     date_naissance = Column(Date, nullable=True)
+
+    # Coordonnées et adresse
+    telephone = Column(String(30), nullable=True)
+    nationalite = Column(String(100), nullable=True)
+    pays = Column(String(100), nullable=True)
+    region = Column(String(100), nullable=True)
+    ville = Column(String(100), nullable=True)
+    adresse = Column(String(255), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     role_id = Column(Integer, ForeignKey("roles.id", ondelete="SET NULL"))
     reset_token = Column(String(36), nullable=True)
     reset_token_expiry = Column(DateTime(timezone=True), nullable=True)
-    __table_args__ = {'comment': "Informations des utilisateurs (apprenants, formateurs, admins)."}
 
-    role = relationship("Role", back_populates="utilisateurs", lazy='select')
-    permissions = relationship("Permission", secondary=association_utilisateurs_permissions, back_populates="utilisateurs", lazy='select')
-    inscriptions = relationship("InscriptionFormation", back_populates="utilisateur", lazy='select')
-    genotypes = relationship("GenotypeIndividuel", back_populates="utilisateur", lazy='select')
-    plans_intervention = relationship("PlanInterventionIndividualise", back_populates="utilisateur", lazy='select')
-    actualites = relationship("Actualite", back_populates="utilisateur", lazy='select')
-    accreditations = relationship("Accreditation", back_populates="utilisateur", lazy='select')
-    chefs_d_oeuvre = relationship("ChefDOeuvre", back_populates="utilisateur", lazy='select')
-    projets_collectifs = relationship("ProjetCollectif", secondary=association_projets_collectifs_membres, back_populates="membres", lazy='select')
-    resultats_evaluations = relationship("ResultatEvaluation", back_populates="utilisateur", lazy='select')
+    role = relationship("Role", back_populates="utilisateurs")
+    permissions = relationship("Permission", secondary=association_utilisateurs_permissions, back_populates="utilisateurs")
+    inscriptions = relationship("InscriptionFormation", back_populates="utilisateur")
+    genotypes = relationship("GenotypeIndividuel", back_populates="utilisateur")
+    plans_intervention = relationship("PlanInterventionIndividualise", back_populates="utilisateur")
+    actualites = relationship("Actualite", back_populates="utilisateur")
+    accreditations = relationship("Accreditation", back_populates="utilisateur")
+    chefs_d_oeuvre = relationship("ChefDOeuvre", back_populates="utilisateur")
+    projets_collectifs = relationship("ProjetCollectif", secondary=association_projets_collectifs_membres, back_populates="membres")
+    resultats_evaluations = relationship("ResultatEvaluation", back_populates="utilisateur")
+    formations = relationship("Formation", secondary=association_utilisateurs_formations, back_populates="utilisateurs")
 
-# =======================================================================================
-# ========================= FORMATIONS ET CONTENUS PÉDAGOGIQUES =========================
-# =======================================================================================
+# ============================================================================
+# ========================= FORMATIONS ET CONTENUS PÉDAGOGIQUES ===============
+# ============================================================================
 
 class InscriptionFormation(Base):
+    """
+    Modèle pour les inscriptions aux formations.
+    Gère les inscriptions des utilisateurs aux différentes formations, leur progression, et les paiements associés.
+    """
     __tablename__ = "inscriptions_formations"
     id = Column(Integer, primary_key=True)
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id"))
@@ -103,18 +129,19 @@ class InscriptionFormation(Base):
     date_dernier_acces = Column(DateTime(timezone=True), onupdate=func.now())
     note_finale = Column(Float, nullable=True)
     heures_formation = Column(Float, default=0.0)
-    montant_verse = Column(Float, default=0.0, nullable=False, comment="Montant total versé pour la formation")
-    statut_paiement = Column(Enum(StatutPaiementEnum), nullable=False, default=StatutPaiementEnum.AUCUN_VERSEMENT, comment="Statut du paiement")
+    montant_verse = Column(Float, default=0.0, nullable=False)
+    statut_paiement = Column(Enum(StatutPaiementEnum), nullable=False, default=StatutPaiementEnum.AUCUN_VERSEMENT)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_inscription_user_formation', 'utilisateur_id', 'formation_id'),
-        {'comment': "Suivi des inscriptions, progression et paiements des apprenants."}
-    )
-    utilisateur = relationship("Utilisateur", back_populates="inscriptions", lazy='select')
-    formation = relationship("Formation", back_populates="inscriptions", lazy='select')
-    paiements = relationship("Paiement", back_populates="inscription", lazy='select')
+
+    utilisateur = relationship("Utilisateur", back_populates="inscriptions")
+    formation = relationship("Formation", back_populates="inscriptions")
+    paiements = relationship("Paiement", back_populates="inscription")
 
 class Formation(Base):
+    """
+    Modèle pour les formations.
+    Définit les formations disponibles, leurs spécialités, durée, statut, et autres détails.
+    """
     __tablename__ = "formations"
     id = Column(Integer, primary_key=True)
     titre = Column(String(255), nullable=False, index=True)
@@ -126,20 +153,21 @@ class Formation(Base):
     frais = Column(Float, default=0.0, nullable=False)
     date_debut = Column(Date, nullable=False, index=True)
     date_fin = Column(Date, nullable=False, index=True)
+    type_formation = Column(Enum(TypeFormationEnum), nullable=False, default=TypeFormationEnum.PRESENTIEL)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_formation_dates', 'date_debut', 'date_fin'),
-        Index('idx_formation_status_dates', 'statut', 'date_debut', 'date_fin'),
-        {'comment': "Formations avec spécialités et calendrier."}
-    )
 
-    modules = relationship("Module", back_populates="formation", lazy='select')
-    inscriptions = relationship("InscriptionFormation", back_populates="formation", lazy='select')
-    projets_collectifs = relationship("ProjetCollectif", back_populates="formation", lazy='select')
-    accreditations = relationship("Accreditation", back_populates="formation", lazy='select')
+    modules = relationship("Module", back_populates="formation")
+    inscriptions = relationship("InscriptionFormation", back_populates="formation")
+    projets_collectifs = relationship("ProjetCollectif", back_populates="formation")
+    accreditations = relationship("Accreditation", back_populates="formation")
+    utilisateurs = relationship("Utilisateur", secondary=association_utilisateurs_formations, back_populates="formations")
 
 class Module(Base):
+    """
+    Modèle pour les modules de formation.
+    Représente les unités pédagogiques d'une formation, contenant des ressources et des évaluations.
+    """
     __tablename__ = "modules"
     id = Column(Integer, primary_key=True)
     titre = Column(String(255), nullable=False, index=True)
@@ -148,14 +176,17 @@ class Module(Base):
     ordre = Column(Integer, nullable=False)
     formation_id = Column(Integer, ForeignKey("formations.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = {'comment': "Unités pédagogiques d’une formation."}
 
-    formation = relationship("Formation", back_populates="modules", lazy='select')
-    ressources = relationship("Ressource", back_populates="module", lazy='select')
-    evaluations = relationship("Evaluation", back_populates="module", lazy='select')
-    chefs_d_oeuvre = relationship("ChefDOeuvre", back_populates="module", lazy='select')
+    formation = relationship("Formation", back_populates="modules")
+    ressources = relationship("Ressource", back_populates="module")
+    evaluations = relationship("Evaluation", back_populates="module")
+    chefs_d_oeuvre = relationship("ChefDOeuvre", back_populates="module")
 
 class Ressource(Base):
+    """
+    Modèle pour les ressources pédagogiques.
+    Stocke les ressources associées aux modules de formation, comme des fichiers, des liens, etc.
+    """
     __tablename__ = "ressources"
     id = Column(Integer, primary_key=True)
     titre = Column(String(255), nullable=False, index=True)
@@ -166,30 +197,34 @@ class Ressource(Base):
     ordre = Column(Integer, nullable=False)
     module_id = Column(Integer, ForeignKey("modules.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = {'comment': "Ressources pédagogiques pour l’apprentissage."}
 
-    module = relationship("Module", back_populates="ressources", lazy='select')
+    module = relationship("Module", back_populates="ressources")
 
 class Paiement(Base):
+    """
+    Modèle pour les paiements.
+    Enregistre les paiements effectués par les utilisateurs pour les inscriptions aux formations.
+    """
     __tablename__ = "paiements"
     id = Column(Integer, primary_key=True)
     inscription_id = Column(Integer, ForeignKey("inscriptions_formations.id"), nullable=False)
-    montant = Column(Float, nullable=False, comment="Montant du paiement")
+    montant = Column(Float, nullable=False)
     date_paiement = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    methode_paiement = Column(Enum(MethodePaiementEnum), nullable=False, comment="Méthode de paiement utilisée")
-    reference_transaction = Column(String(255), nullable=True, comment="Référence de la transaction (ex: ID PesuPay)")
+    methode_paiement = Column(Enum(MethodePaiementEnum), nullable=False)
+    reference_transaction = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_paiement_inscription', 'inscription_id'),
-        {'comment': "Historique des paiements pour chaque inscription."}
-    )
-    inscription = relationship("InscriptionFormation", back_populates="paiements", lazy='select')
 
-# ============================================================================    
-# ========================= PROJETS PÉDAGOGIQUES =============================
+    inscription = relationship("InscriptionFormation", back_populates="paiements")
+
+# ============================================================================
+# ========================= PROJETS PÉDAGOGIQUES ==============================
 # ============================================================================
 
 class ChefDOeuvre(Base):
+    """
+    Modèle pour les chefs-d'œuvre.
+    Représente les projets individuels réalisés par les apprenants dans le cadre de leur formation.
+    """
     __tablename__ = "chefs_d_oeuvre"
     id = Column(Integer, primary_key=True)
     titre = Column(String(255), nullable=False)
@@ -202,15 +237,15 @@ class ChefDOeuvre(Base):
     note = Column(Float, nullable=True)
     commentaires = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_chef_oeuvre_user_module', 'utilisateur_id', 'module_id'),
-        {'comment': "Projets individuels des apprenants (pédagogie Mao)."}
-    )
 
-    utilisateur = relationship("Utilisateur", back_populates="chefs_d_oeuvre", lazy='select')
-    module = relationship("Module", back_populates="chefs_d_oeuvre", lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="chefs_d_oeuvre")
+    module = relationship("Module", back_populates="chefs_d_oeuvre")
 
 class ProjetCollectif(Base):
+    """
+    Modèle pour les projets collectifs.
+    Représente les projets collaboratifs réalisés par les apprenants dans le cadre de leur formation.
+    """
     __tablename__ = "projets_collectifs"
     id = Column(Integer, primary_key=True)
     titre = Column(String(255), nullable=False)
@@ -221,19 +256,19 @@ class ProjetCollectif(Base):
     date_debut = Column(DateTime(timezone=True), nullable=False)
     date_fin = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_projet_collectif_formation_statut', 'formation_id', 'statut'),
-        {'comment': "Projets collaboratifs des apprenants."}
-    )
 
-    formation = relationship("Formation", back_populates="projets_collectifs", lazy='select')
-    membres = relationship("Utilisateur", secondary=association_projets_collectifs_membres, back_populates="projets_collectifs", lazy='select')
-    
-# ============================================================================    
+    formation = relationship("Formation", back_populates="projets_collectifs")
+    membres = relationship("Utilisateur", secondary=association_projets_collectifs_membres, back_populates="projets_collectifs")
+
+# ============================================================================
 # ========================= ÉVALUATIONS ======================================
 # ============================================================================
 
 class Evaluation(Base):
+    """
+    Modèle pour les évaluations.
+    Définit les évaluations associées aux modules de formation pour tester les compétences des apprenants.
+    """
     __tablename__ = "evaluations"
     id = Column(Integer, primary_key=True)
     titre = Column(String(255), nullable=False)
@@ -241,13 +276,16 @@ class Evaluation(Base):
     consigne = Column(Text, nullable=True)
     module_id = Column(Integer, ForeignKey("modules.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = {'comment': "Évaluations pour tester les compétences."}
 
-    module = relationship("Module", back_populates="evaluations", lazy='select')
-    questions = relationship("Question", back_populates="evaluation", lazy='select')
-    resultats = relationship("ResultatEvaluation", back_populates="evaluation", lazy='select')
+    module = relationship("Module", back_populates="evaluations")
+    questions = relationship("Question", back_populates="evaluation")
+    resultats = relationship("ResultatEvaluation", back_populates="evaluation")
 
 class Question(Base):
+    """
+    Modèle pour les questions d'évaluation.
+    Stocke les questions associées aux évaluations, avec leurs types et contenus.
+    """
     __tablename__ = "questions"
     id = Column(Integer, primary_key=True)
     type = Column(Enum(EvaluationTypeEnum), nullable=False)
@@ -255,26 +293,29 @@ class Question(Base):
     piece_jointe = Column(String(255), nullable=True)
     evaluation_id = Column(Integer, ForeignKey("evaluations.id"), index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_question_type_eval', 'type', 'evaluation_id'),
-        {'comment': "Questions des évaluations."}
-    )
 
-    evaluation = relationship("Evaluation", back_populates="questions", lazy='select')
-    propositions = relationship("Proposition", back_populates="question", lazy='select')
+    evaluation = relationship("Evaluation", back_populates="questions")
+    propositions = relationship("Proposition", back_populates="question")
 
 class Proposition(Base):
+    """
+    Modèle pour les propositions de réponse aux questions d'évaluation.
+    Stocke les options de réponse pour les questions de type QCM.
+    """
     __tablename__ = "propositions"
     id = Column(Integer, primary_key=True)
     texte = Column(Text, nullable=False)
     est_correcte = Column(Boolean, default=False)
     question_id = Column(Integer, ForeignKey("questions.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = {'comment': "Options de réponse pour QCM."}
 
-    question = relationship("Question", back_populates="propositions", lazy='select')
+    question = relationship("Question", back_populates="propositions")
 
 class ResultatEvaluation(Base):
+    """
+    Modèle pour les résultats des évaluations.
+    Enregistre les performances des apprenants aux évaluations, avec leurs notes et commentaires.
+    """
     __tablename__ = "resultats_evaluations"
     id = Column(Integer, primary_key=True)
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id"), index=True)
@@ -283,20 +324,19 @@ class ResultatEvaluation(Base):
     date_soumission = Column(DateTime(timezone=True), nullable=True)
     commentaires = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_resultat_user_eval', 'utilisateur_id', 'evaluation_id'),
-        Index('idx_resultat_date_note', 'date_soumission', 'note'),
-        {'comment': "Performances des apprenants aux évaluations."}
-    )
 
-    utilisateur = relationship("Utilisateur", back_populates="resultats_evaluations", lazy='select')
-    evaluation = relationship("Evaluation", back_populates="resultats", lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="resultats_evaluations")
+    evaluation = relationship("Evaluation", back_populates="resultats")
 
-# ============================================================================    
+# ============================================================================
 # ========================= DONNÉES DU GÉNOTYPE INDIVIDUEL ===================
 # ============================================================================
 
 class GenotypeIndividuel(Base):
+    """
+    Modèle pour les données du génotype individuel.
+    Stocke les informations individuelles des détenus ou de leurs proches pour le génotype individuel.
+    """
     __tablename__ = "genotypes_individuels"
     id = Column(Integer, primary_key=True)
     type = Column(Enum(GenotypeTypeEnum), nullable=False, index=True)
@@ -313,19 +353,18 @@ class GenotypeIndividuel(Base):
     profession = Column(String(255), nullable=True)
     activite_avant_detention = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_genotype_nom_prenom', 'nom', 'prenom'),
-        Index('idx_genotype_detention', 'type', 'maison_detention', 'date_debut_detention'),
-        {'comment': "Données des détenus ou proches pour le génotype individuel."}
-    )
 
-    utilisateur = relationship("Utilisateur", back_populates="genotypes", lazy='select')
-    ascendance = relationship("AscendanceGenotype", back_populates="genotype", uselist=False, lazy='select')
-    sante = relationship("SanteGenotype", back_populates="genotype", uselist=False, lazy='select')
-    education = relationship("EducationGenotype", back_populates="genotype", uselist=False, lazy='select')
-    plans_intervention = relationship("PlanInterventionIndividualise", back_populates="genotype", lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="genotypes")
+    ascendance = relationship("AscendanceGenotype", back_populates="genotype", uselist=False)
+    sante = relationship("SanteGenotype", back_populates="genotype", uselist=False)
+    education = relationship("EducationGenotype", back_populates="genotype", uselist=False)
+    plans_intervention = relationship("PlanInterventionIndividualise", back_populates="genotype")
 
 class AscendanceGenotype(Base):
+    """
+    Modèle pour les informations d'ascendance du génotype.
+    Stocke les informations sur les parents et grands-parents des individus.
+    """
     __tablename__ = "ascendance_genotypes"
     id = Column(Integer, primary_key=True)
     genotype_id = Column(Integer, ForeignKey("genotypes_individuels.id"))
@@ -348,11 +387,14 @@ class AscendanceGenotype(Base):
     domicile_mere = Column(String(255), nullable=True)
     proprietaire_domicile_mere = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = {'comment': "Informations d’ascendance pour le génotype."}
 
-    genotype = relationship("GenotypeIndividuel", back_populates="ascendance", lazy='select')
+    genotype = relationship("GenotypeIndividuel", back_populates="ascendance")
 
 class SanteGenotype(Base):
+    """
+    Modèle pour les informations sanitaires du génotype.
+    Stocke les informations sur la santé des individus, comme les maladies chroniques, les allergies, etc.
+    """
     __tablename__ = "sante_genotypes"
     id = Column(Integer, primary_key=True)
     genotype_id = Column(Integer, ForeignKey("genotypes_individuels.id"), unique=True)
@@ -367,11 +409,14 @@ class SanteGenotype(Base):
     groupe_sanguin = Column(String(10), nullable=True)
     rhesus = Column(String(10), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = {'comment': "Informations sanitaires pour le génotype."}
 
-    genotype = relationship("GenotypeIndividuel", back_populates="sante", lazy='select')
+    genotype = relationship("GenotypeIndividuel", back_populates="sante")
 
 class EducationGenotype(Base):
+    """
+    Modèle pour les informations éducatives du génotype.
+    Stocke les informations sur l'éducation des individus, comme les établissements fréquentés, les classes suivies, etc.
+    """
     __tablename__ = "education_genotypes"
     id = Column(Integer, primary_key=True)
     genotype_id = Column(Integer, ForeignKey("genotypes_individuels.id"), unique=True)
@@ -380,15 +425,18 @@ class EducationGenotype(Base):
     date_arret_cours = Column(Date, nullable=True)
     raisons_decrochage = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = {'comment': "Informations éducatives pour le génotype."}
 
-    genotype = relationship("GenotypeIndividuel", back_populates="education", lazy='select')
+    genotype = relationship("GenotypeIndividuel", back_populates="education")
 
-# ========================================================================
-# ========================= PLANS D’INTERVENTION =========================
-# ========================================================================
+# ============================================================================
+# ========================= PLANS D’INTERVENTION =============================
+# ============================================================================
 
 class PlanInterventionIndividualise(Base):
+    """
+    Modèle pour les plans d'intervention individualisés.
+    Définit les plans d'intervention basés sur le génotype individuel pour aider les détenus ou leurs proches.
+    """
     __tablename__ = "plans_intervention_individualises"
     id = Column(Integer, primary_key=True)
     genotype_id = Column(Integer, ForeignKey("genotypes_individuels.id"), index=True)
@@ -399,20 +447,19 @@ class PlanInterventionIndividualise(Base):
     date_creation = Column(DateTime(timezone=True), server_default=func.now())
     date_mise_a_jour = Column(DateTime(timezone=True), onupdate=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_plan_genotype_statut', 'genotype_id', 'statut'),
-        Index('idx_plan_dates', 'date_creation', 'date_mise_a_jour'),
-        {'comment': "Plans d’intervention individualisés basés sur le génotype."}
-    )
 
-    genotype = relationship("GenotypeIndividuel", back_populates="plans_intervention", lazy='select')
-    utilisateur = relationship("Utilisateur", back_populates="plans_intervention", lazy='select')
-    
-# ============================================================================    
+    genotype = relationship("GenotypeIndividuel", back_populates="plans_intervention")
+    utilisateur = relationship("Utilisateur", back_populates="plans_intervention")
+
+# ============================================================================
 # ========================= ACCRÉDITATIONS ===================================
 # ============================================================================
 
 class Accreditation(Base):
+    """
+    Modèle pour les accréditations.
+    Gère les accréditations nécessaires pour l'accès aux établissements pénitentiaires.
+    """
     __tablename__ = "accreditations"
     id = Column(Integer, primary_key=True)
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id"))
@@ -422,19 +469,19 @@ class Accreditation(Base):
     date_expiration = Column(DateTime(timezone=True), nullable=True)
     statut = Column(Enum(StatutEnum), nullable=False, default=StatutEnum.PLANIFIEE)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    __table_args__ = (
-        Index('idx_accreditation_user_formation', 'utilisateur_id', 'formation_id'),
-        {'comment': "Accréditations pour accès aux établissements pénitentiaires."}
-    )
 
-    utilisateur = relationship("Utilisateur", back_populates="accreditations", lazy='select')
-    formation = relationship("Formation", back_populates="accreditations", lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="accreditations")
+    formation = relationship("Formation", back_populates="accreditations")
 
-# ============================================================================    
+# ============================================================================
 # ========================= ACTUALITÉS =======================================
 # ============================================================================
 
 class Actualite(Base):
+    """
+    Modèle pour les actualités.
+    Stocke les articles et actualités publiés sur le site, avec des informations comme le titre, l'auteur, la date de publication, etc.
+    """
     __tablename__ = "actualites"
     id = Column(Integer, primary_key=True, index=True)
     titre = Column(String(255), nullable=False)
@@ -451,6 +498,5 @@ class Actualite(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id"))
-    __table_args__ = {'comment': "Actualités et articles de blog."}
 
-    utilisateur = relationship("Utilisateur", back_populates="actualites", lazy='select')
+    utilisateur = relationship("Utilisateur", back_populates="actualites")
