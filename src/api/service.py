@@ -1424,52 +1424,53 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
 
     async def change_user_status(self, db: AsyncSession, user_id: int, statut: StatutCompteEnum) -> UtilisateurLight:
         """Change le statut d'un utilisateur et retourne l'utilisateur mis à jour."""
-        try:
-            query = select(self.model).filter(self.model.id == user_id).options(
-                selectinload(self.model.role).selectinload(RoleModel.permissions),
-                selectinload(self.model.permissions)
-            )
-            result = await db.execute(query)
-            db_obj = result.scalars().first()
-            if not db_obj:
+        async with db.begin():
+            try:
+                query = select(self.model).filter(self.model.id == user_id).options(
+                    selectinload(self.model.role).selectinload(RoleModel.permissions),
+                    selectinload(self.model.permissions)
+                )
+                result = await db.execute(query)
+                db_obj = result.scalars().first()
+                if not db_obj:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Utilisateur non trouvé"
+                    )
+                db_obj.statut = statut
+                db.add(db_obj)
+                await db.flush()
+                # Manual serialization
+                role_light = None
+                if db_obj.role:
+                    role_light = RoleLight(
+                        id=db_obj.role.id,
+                        nom=db_obj.role.nom,
+                        permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.role.permissions],
+                        user_count=(await db.execute(
+                            select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
+                        )).scalar()
+                    )
+                return UtilisateurLight(
+                    id=db_obj.id,
+                    nom=db_obj.nom,
+                    prenom=db_obj.prenom,
+                    sexe=db_obj.sexe,
+                    email=db_obj.email,
+                    statut=db_obj.statut,
+                    est_actif=db_obj.est_actif,
+                    date_naissance=db_obj.date_naissance,
+                    created_at=db_obj.created_at,
+                    updated_at=db_obj.updated_at,
+                    role=role_light,
+                    permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in db_obj.permissions]
+                )
+            except SQLAlchemyError as e:
+                logger.error(f"Erreur lors du changement de statut de l'utilisateur: {str(e)}")
                 raise HTTPException(
-                    status_code=404,
-                    detail="Utilisateur non trouvé"
+                    status_code=500,
+                    detail="Erreur lors du changement de statut de l'utilisateur"
                 )
-            db_obj.statut = statut
-            db.add(db_obj)
-            await db.flush()
-            # Manual serialization
-            role_light = None
-            if db_obj.role:
-                role_light = RoleLight(
-                    id=db_obj.role.id,
-                    nom=db_obj.role.nom,
-                    permissions=[PermissionMinLight(id=perm.id, nom=perm.nom) for perm in db_obj.role.permissions],
-                    user_count=(await db.execute(
-                        select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
-                    )).scalar()
-                )
-            return UtilisateurLight(
-                id=db_obj.id,
-                nom=db_obj.nom,
-                prenom=db_obj.prenom,
-                sexe=db_obj.sexe,
-                email=db_obj.email,
-                statut=db_obj.statut,
-                est_actif=db_obj.est_actif,
-                date_naissance=db_obj.date_naissance,
-                created_at=db_obj.created_at,
-                updated_at=db_obj.updated_at,
-                role=role_light,
-                permissions=[PermissionLight(id=perm.id, nom=perm.nom, roles=[]) for perm in db_obj.permissions]
-            )
-        except SQLAlchemyError as e:
-            logger.error(f"Erreur lors du changement de statut de l'utilisateur: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail="Erreur lors du changement de statut de l'utilisateur"
-            )
 
 
 
@@ -1536,89 +1537,91 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
 
     async def assign_permissions(self, db: AsyncSession, user_id: int, permission_ids: List[int]) -> str:
         """Assigne des permissions directement à un utilisateur."""
-        try:
-            db_obj = await self.get_or_404(db, user_id)
-            permissions = await db.execute(
-                select(PermissionModel).filter(PermissionModel.id.in_(permission_ids))
-            )
-            permission_objects = permissions.scalars().all()
-            if not permission_objects:
-                all_permissions = await db.execute(select(PermissionModel))
-                available_permissions = all_permissions.scalars().all()
-                available_ids = [p.id for p in available_permissions]
-                available_names = [p.nom.value for p in available_permissions]
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Aucune permission valide fournie. IDs demandés: {permission_ids}. Permissions disponibles: {available_names} (IDs: {available_ids})"
+        async with db.begin():
+            try:
+                db_obj = await self.get_or_404(db, user_id)
+                permissions = await db.execute(
+                    select(PermissionModel).filter(PermissionModel.id.in_(permission_ids))
                 )
-            user_permissions_query = await db.execute(
-                select(PermissionModel)
-                .join(association_utilisateurs_permissions)
-                .filter(association_utilisateurs_permissions.c.utilisateur_id == user_id)
-            )
-            current_permission_ids = {p.id for p in user_permissions_query.scalars().all()}
-            for permission in permission_objects:
-                if permission.id not in current_permission_ids:
-                    await db.execute(
-                        insert(association_utilisateurs_permissions).values(
-                            utilisateur_id=user_id,
-                            permission_id=permission.id
-                        )
+                permission_objects = permissions.scalars().all()
+                if not permission_objects:
+                    all_permissions = await db.execute(select(PermissionModel))
+                    available_permissions = all_permissions.scalars().all()
+                    available_ids = [p.id for p in available_permissions]
+                    available_names = [p.nom.value for p in available_permissions]
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Aucune permission valide fournie. IDs demandés: {permission_ids}. Permissions disponibles: {available_names} (IDs: {available_ids})"
                     )
-            await db.flush()
-            permission_names = [p.nom.value for p in permission_objects]
-            return f"Permissions {', '.join(permission_names)} assignées avec succès à l'utilisateur {db_obj.nom} {db_obj.prenom}"
-        except SQLAlchemyError as e:
-            logger.error(f"Erreur lors de l'assignation des permissions: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail="Erreur lors de l'assignation des permissions"
-            )
+                user_permissions_query = await db.execute(
+                    select(PermissionModel)
+                    .join(association_utilisateurs_permissions)
+                    .filter(association_utilisateurs_permissions.c.utilisateur_id == user_id)
+                )
+                current_permission_ids = {p.id for p in user_permissions_query.scalars().all()}
+                for permission in permission_objects:
+                    if permission.id not in current_permission_ids:
+                        await db.execute(
+                            insert(association_utilisateurs_permissions).values(
+                                utilisateur_id=user_id,
+                                permission_id=permission.id
+                            )
+                        )
+                await db.flush()
+                permission_names = [p.nom.value for p in permission_objects]
+                return f"Permissions {', '.join(permission_names)} assignées avec succès à l'utilisateur {db_obj.nom} {db_obj.prenom}"
+            except SQLAlchemyError as e:
+                logger.error(f"Erreur lors de l'assignation des permissions: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Erreur lors de l'assignation des permissions"
+                )
 
     async def revoke_permissions(self, db: AsyncSession, user_id: int, permission_ids: List[int]) -> str:
         """Révoque des permissions directement d'un utilisateur."""
-        try:
-            db_obj = await self.get_or_404(db, user_id)
-            permissions = await db.execute(
-                select(PermissionModel).filter(PermissionModel.id.in_(permission_ids))
-            )
-            permission_objects = permissions.scalars().all()
-            if not permission_objects:
-                all_permissions = await db.execute(select(PermissionModel))
-                available_permissions = all_permissions.scalars().all()
-                available_ids = [p.id for p in available_permissions]
-                available_names = [p.nom.value for p in available_permissions]
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Aucune permission valide fournie. IDs demandés: {permission_ids}. Permissions disponibles: {available_names} (IDs: {available_ids})"
+        async with db.begin():
+            try:
+                db_obj = await self.get_or_404(db, user_id)
+                permissions = await db.execute(
+                    select(PermissionModel).filter(PermissionModel.id.in_(permission_ids))
                 )
-            user_permissions_query = await db.execute(
-                select(PermissionModel)
-                .join(association_utilisateurs_permissions)
-                .filter(association_utilisateurs_permissions.c.utilisateur_id == user_id)
-            )
-            current_permission_ids = {p.id: p for p in user_permissions_query.scalars().all()}
-            revoked_permissions = []
-            for permission in permission_objects:
-                if permission.id in current_permission_ids:
-                    await db.execute(
-                        delete(association_utilisateurs_permissions).where(
-                            (association_utilisateurs_permissions.c.utilisateur_id == user_id) &
-                            (association_utilisateurs_permissions.c.permission_id == permission.id)
-                        )
+                permission_objects = permissions.scalars().all()
+                if not permission_objects:
+                    all_permissions = await db.execute(select(PermissionModel))
+                    available_permissions = all_permissions.scalars().all()
+                    available_ids = [p.id for p in available_permissions]
+                    available_names = [p.nom.value for p in available_permissions]
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Aucune permission valide fournie. IDs demandés: {permission_ids}. Permissions disponibles: {available_names} (IDs: {available_ids})"
                     )
-                    revoked_permissions.append(permission)
-            await db.flush()
-            if revoked_permissions:
-                permission_names = [p.nom.value for p in revoked_permissions]
-                return f"Permissions {', '.join(permission_names)} révoquées avec succès de l'utilisateur {db_obj.nom} {db_obj.prenom}"
-            return f"Aucune permission n'a été révoquée de l'utilisateur {db_obj.nom} {db_obj.prenom}"
-        except SQLAlchemyError as e:
-            logger.error(f"Erreur lors de la révocation des permissions: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail="Erreur lors de la révocation des permissions"
-            )
+                user_permissions_query = await db.execute(
+                    select(PermissionModel)
+                    .join(association_utilisateurs_permissions)
+                    .filter(association_utilisateurs_permissions.c.utilisateur_id == user_id)
+                )
+                current_permission_ids = {p.id: p for p in user_permissions_query.scalars().all()}
+                revoked_permissions = []
+                for permission in permission_objects:
+                    if permission.id in current_permission_ids:
+                        await db.execute(
+                            delete(association_utilisateurs_permissions).where(
+                                (association_utilisateurs_permissions.c.utilisateur_id == user_id) &
+                                (association_utilisateurs_permissions.c.permission_id == permission.id)
+                            )
+                        )
+                        revoked_permissions.append(permission)
+                await db.flush()
+                if revoked_permissions:
+                    permission_names = [p.nom.value for p in revoked_permissions]
+                    return f"Permissions {', '.join(permission_names)} révoquées avec succès de l'utilisateur {db_obj.nom} {db_obj.prenom}"
+                return f"Aucune permission n'a été révoquée de l'utilisateur {db_obj.nom} {db_obj.prenom}"
+            except SQLAlchemyError as e:
+                logger.error(f"Erreur lors de la révocation des permissions: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Erreur lors de la révocation des permissions"
+                )
 
     async def login(self, db: AsyncSession, account: loginSchema) -> dict:
         """Authentifie un utilisateur et retourne un token JWT."""
