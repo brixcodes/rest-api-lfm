@@ -1454,6 +1454,9 @@ class UtilisateurService(BaseService[UtilisateurModel, Utilisateur, UtilisateurC
                             select(func.count(UtilisateurModel.id)).filter(UtilisateurModel.role_id == db_obj.role.id)
                         )).scalar()
                     )
+                # Rafraîchir l'objet pour obtenir les timestamps mis à jour
+                await db.refresh(db_obj)
+
                 return UtilisateurLight(
                     id=db_obj.id,
                     nom=db_obj.nom,
