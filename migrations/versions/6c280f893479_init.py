@@ -1,8 +1,8 @@
-"""Initialsation
+"""Init
 
-Revision ID: 2a7a2092a0ce
+Revision ID: 6c280f893479
 Revises: 
-Create Date: 2025-08-06 12:28:17.807603
+Create Date: 2025-08-11 09:10:24.533329
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '2a7a2092a0ce'
+revision: str = '6c280f893479'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -32,13 +32,11 @@ def upgrade() -> None:
     sa.Column('frais', sa.Float(), nullable=False),
     sa.Column('date_debut', sa.Date(), nullable=False),
     sa.Column('date_fin', sa.Date(), nullable=False),
+    sa.Column('type_formation', sa.Enum('PRESENTIEL', 'EN_LIGNE', name='typeformationenum'), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Formations avec spécialités et calendrier.'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_formation_dates', 'formations', ['date_debut', 'date_fin'], unique=False)
-    op.create_index('idx_formation_status_dates', 'formations', ['statut', 'date_debut', 'date_fin'], unique=False)
     op.create_index(op.f('ix_formations_date_debut'), 'formations', ['date_debut'], unique=False)
     op.create_index(op.f('ix_formations_date_fin'), 'formations', ['date_fin'], unique=False)
     op.create_index(op.f('ix_formations_specialite'), 'formations', ['specialite'], unique=False)
@@ -48,23 +46,20 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('nom', sa.Enum('LIRE_UTILISATEUR', 'MODIFIER_UTILISATEUR', 'CREER_UTILISATEUR', 'SUPPRIMER_UTILISATEUR', 'REINITIALISER_MOT_DE_PASSE', 'CHANGER_MOT_DE_PASSE', 'LIRE_PERMISSION', 'MODIFIER_PERMISSION', 'CREER_PERMISSION', 'SUPPRIMER_PERMISSION', 'LIRE_ROLE', 'MODIFIER_ROLE', 'CREER_ROLE', 'SUPPRIMER_ROLE', 'LIRE_FORMATION', 'MODIFIER_FORMATION', 'CREER_FORMATION', 'SUPPRIMER_FORMATION', 'LIRE_INSCRIPTION', 'MODIFIER_INSCRIPTION', 'CREER_INSCRIPTION', 'SUPPRIMER_INSCRIPTION', 'LIRE_PAIEMENT', 'MODIFIER_PAIEMENT', 'CREER_PAIEMENT', 'SUPPRIMER_PAIEMENT', 'LIRE_MODULE', 'MODIFIER_MODULE', 'CREER_MODULE', 'SUPPRIMER_MODULE', 'LIRE_RESSOURCE', 'MODIFIER_RESSOURCE', 'CREER_RESSOURCE', 'SUPPRIMER_RESSOURCE', 'LIRE_CHEF_D_OEUVRE', 'MODIFIER_CHEF_D_OEUVRE', 'CREER_CHEF_D_OEUVRE', 'SUPPRIMER_CHEF_D_OEUVRE', 'LIRE_PROJET_COLLECTIF', 'MODIFIER_PROJET_COLLECTIF', 'CREER_PROJET_COLLECTIF', 'SUPPRIMER_PROJET_COLLECTIF', 'LIRE_EVALUATION', 'MODIFIER_EVALUATION', 'CREER_EVALUATION', 'SUPPRIMER_EVALUATION', 'LIRE_QUESTION', 'MODIFIER_QUESTION', 'CREER_QUESTION', 'SUPPRIMER_QUESTION', 'LIRE_PROPOSITION', 'MODIFIER_PROPOSITION', 'CREER_PROPOSITION', 'SUPPRIMER_PROPOSITION', 'LIRE_RESULTAT_EVALUATION', 'MODIFIER_RESULTAT_EVALUATION', 'CREER_RESULTAT_EVALUATION', 'SUPPRIMER_RESULTAT_EVALUATION', 'LIRE_GENOTYPE', 'MODIFIER_GENOTYPE', 'CREER_GENOTYPE', 'SUPPRIMER_GENOTYPE', 'LIRE_ASCENDANCE_GENOTYPE', 'MODIFIER_ASCENDANCE_GENOTYPE', 'CREER_ASCENDANCE_GENOTYPE', 'SUPPRIMER_ASCENDANCE_GENOTYPE', 'LIRE_SANTE_GENOTYPE', 'MODIFIER_SANTE_GENOTYPE', 'CREER_SANTE_GENOTYPE', 'SUPPRIMER_SANTE_GENOTYPE', 'LIRE_EDUCATION_GENOTYPE', 'MODIFIER_EDUCATION_GENOTYPE', 'CREER_EDUCATION_GENOTYPE', 'SUPPRIMER_EDUCATION_GENOTYPE', 'LIRE_PLAN_INTERVENTION', 'MODIFIER_PLAN_INTERVENTION', 'CREER_PLAN_INTERVENTION', 'SUPPRIMER_PLAN_INTERVENTION', 'LIRE_ACCREDITATION', 'MODIFIER_ACCREDITATION', 'CREER_ACCREDITATION', 'SUPPRIMER_ACCREDITATION', 'LIRE_ACTUALITE', 'MODIFIER_ACTUALITE', 'CREER_ACTUALITE', 'SUPPRIMER_ACTUALITE', 'LIRE_FICHIER', 'TELEVERSER_FICHIER', 'SUPPRIMER_FICHIER', name='permissionenum'), nullable=False),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('nom'),
-    comment="Permissions pour contrôle d'accès."
+    sa.UniqueConstraint('nom')
     )
     op.create_table('roles',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('nom', sa.Enum('ADMIN', 'COORDONNATEUR', 'FORMATEUR', 'REFERENT', 'APPRENANT', name='roleenum'), nullable=False),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('nom'),
-    comment='Rôles des utilisateurs avec permissions associées.'
+    sa.UniqueConstraint('nom')
     )
     op.create_table('association_roles_permissions',
     sa.Column('role_id', sa.Integer(), nullable=False),
     sa.Column('permission_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['permission_id'], ['permissions.id'], ),
     sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ),
-    sa.PrimaryKeyConstraint('role_id', 'permission_id'),
-    comment='Associe rôles et permissions pour la gestion des droits.'
+    sa.PrimaryKeyConstraint('role_id', 'permission_id')
     )
     op.create_table('modules',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -75,8 +70,7 @@ def upgrade() -> None:
     sa.Column('formation_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['formation_id'], ['formations.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Unités pédagogiques d’une formation.'
+    sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_modules_titre'), 'modules', ['titre'], unique=False)
     op.create_table('projets_collectifs',
@@ -90,10 +84,8 @@ def upgrade() -> None:
     sa.Column('date_fin', sa.DateTime(timezone=True), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['formation_id'], ['formations.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Projets collaboratifs des apprenants.'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_projet_collectif_formation_statut', 'projets_collectifs', ['formation_id', 'statut'], unique=False)
     op.create_table('utilisateurs',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('nom', sa.String(length=255), nullable=False),
@@ -105,14 +97,19 @@ def upgrade() -> None:
     sa.Column('est_actif', sa.Boolean(), nullable=True),
     sa.Column('last_password_change', sa.DateTime(timezone=True), nullable=True),
     sa.Column('date_naissance', sa.Date(), nullable=True),
+    sa.Column('telephone', sa.String(length=30), nullable=True),
+    sa.Column('nationalite', sa.String(length=100), nullable=True),
+    sa.Column('pays', sa.String(length=100), nullable=True),
+    sa.Column('region', sa.String(length=100), nullable=True),
+    sa.Column('ville', sa.String(length=100), nullable=True),
+    sa.Column('adresse', sa.String(length=255), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('role_id', sa.Integer(), nullable=True),
     sa.Column('reset_token', sa.String(length=36), nullable=True),
     sa.Column('reset_token_expiry', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ondelete='SET NULL'),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Informations des utilisateurs (apprenants, formateurs, admins).'
+    sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_utilisateurs_email'), 'utilisateurs', ['email'], unique=True)
     op.create_table('accreditations',
@@ -126,10 +123,8 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['formation_id'], ['formations.id'], ),
     sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Accréditations pour accès aux établissements pénitentiaires.'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_accreditation_user_formation', 'accreditations', ['utilisateur_id', 'formation_id'], unique=False)
     op.create_table('actualites',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('titre', sa.String(length=255), nullable=False),
@@ -148,8 +143,7 @@ def upgrade() -> None:
     sa.Column('utilisateur_id', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('slug'),
-    comment='Actualités et articles de blog.'
+    sa.UniqueConstraint('slug')
     )
     op.create_index(op.f('ix_actualites_id'), 'actualites', ['id'], unique=False)
     op.create_table('association_projets_collectifs_membres',
@@ -157,16 +151,21 @@ def upgrade() -> None:
     sa.Column('utilisateur_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['projet_collectif_id'], ['projets_collectifs.id'], ),
     sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
-    sa.PrimaryKeyConstraint('projet_collectif_id', 'utilisateur_id'),
-    comment='Associe membres aux projets collectifs.'
+    sa.PrimaryKeyConstraint('projet_collectif_id', 'utilisateur_id')
+    )
+    op.create_table('association_utilisateurs_formations',
+    sa.Column('utilisateur_id', sa.Integer(), nullable=False),
+    sa.Column('formation_id', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['formation_id'], ['formations.id'], ),
+    sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
+    sa.PrimaryKeyConstraint('utilisateur_id', 'formation_id')
     )
     op.create_table('association_utilisateurs_permissions',
     sa.Column('utilisateur_id', sa.Integer(), nullable=False),
     sa.Column('permission_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['permission_id'], ['permissions.id'], ),
     sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
-    sa.PrimaryKeyConstraint('utilisateur_id', 'permission_id'),
-    comment='Associe permissions directes aux utilisateurs.'
+    sa.PrimaryKeyConstraint('utilisateur_id', 'permission_id')
     )
     op.create_table('chefs_d_oeuvre',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -182,10 +181,8 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['module_id'], ['modules.id'], ),
     sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Projets individuels des apprenants (pédagogie Mao).'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_chef_oeuvre_user_module', 'chefs_d_oeuvre', ['utilisateur_id', 'module_id'], unique=False)
     op.create_table('evaluations',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('titre', sa.String(length=255), nullable=False),
@@ -194,8 +191,7 @@ def upgrade() -> None:
     sa.Column('module_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['module_id'], ['modules.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Évaluations pour tester les compétences.'
+    sa.PrimaryKeyConstraint('id')
     )
     op.create_table('genotypes_individuels',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -214,11 +210,8 @@ def upgrade() -> None:
     sa.Column('activite_avant_detention', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Données des détenus ou proches pour le génotype individuel.'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_genotype_detention', 'genotypes_individuels', ['type', 'maison_detention', 'date_debut_detention'], unique=False)
-    op.create_index('idx_genotype_nom_prenom', 'genotypes_individuels', ['nom', 'prenom'], unique=False)
     op.create_index(op.f('ix_genotypes_individuels_date_debut_detention'), 'genotypes_individuels', ['date_debut_detention'], unique=False)
     op.create_index(op.f('ix_genotypes_individuels_maison_detention'), 'genotypes_individuels', ['maison_detention'], unique=False)
     op.create_index(op.f('ix_genotypes_individuels_nom'), 'genotypes_individuels', ['nom'], unique=False)
@@ -236,15 +229,13 @@ def upgrade() -> None:
     sa.Column('date_dernier_acces', sa.DateTime(timezone=True), nullable=True),
     sa.Column('note_finale', sa.Float(), nullable=True),
     sa.Column('heures_formation', sa.Float(), nullable=True),
-    sa.Column('montant_verse', sa.Float(), nullable=False, comment='Montant total versé pour la formation'),
-    sa.Column('statut_paiement', sa.Enum('VERSEMENT_PARTIEL', 'AUCUN_VERSEMENT', 'TERMINE', name='statutpaiementenum'), nullable=False, comment='Statut du paiement'),
+    sa.Column('montant_verse', sa.Float(), nullable=False),
+    sa.Column('statut_paiement', sa.Enum('VERSEMENT_PARTIEL', 'AUCUN_VERSEMENT', 'TERMINE', name='statutpaiementenum'), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['formation_id'], ['formations.id'], ),
     sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Suivi des inscriptions, progression et paiements des apprenants.'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_inscription_user_formation', 'inscriptions_formations', ['utilisateur_id', 'formation_id'], unique=False)
     op.create_table('ressources',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('titre', sa.String(length=255), nullable=False),
@@ -256,8 +247,7 @@ def upgrade() -> None:
     sa.Column('module_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['module_id'], ['modules.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Ressources pédagogiques pour l’apprentissage.'
+    sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_ressources_titre'), 'ressources', ['titre'], unique=False)
     op.create_table('ascendance_genotypes',
@@ -283,8 +273,7 @@ def upgrade() -> None:
     sa.Column('proprietaire_domicile_mere', sa.String(length=255), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['genotype_id'], ['genotypes_individuels.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Informations d’ascendance pour le génotype.'
+    sa.PrimaryKeyConstraint('id')
     )
     op.create_table('education_genotypes',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -296,22 +285,19 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['genotype_id'], ['genotypes_individuels.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('genotype_id'),
-    comment='Informations éducatives pour le génotype.'
+    sa.UniqueConstraint('genotype_id')
     )
     op.create_table('paiements',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('inscription_id', sa.Integer(), nullable=False),
-    sa.Column('montant', sa.Float(), nullable=False, comment='Montant du paiement'),
+    sa.Column('montant', sa.Float(), nullable=False),
     sa.Column('date_paiement', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('methode_paiement', sa.Enum('CARTE_BANCAIRE', 'MOBILE_MONEY', 'VIREMENT_BANCAIRE', 'ESPECES', 'PESUPAY', name='methodepaiementenum'), nullable=False, comment='Méthode de paiement utilisée'),
-    sa.Column('reference_transaction', sa.String(length=255), nullable=True, comment='Référence de la transaction (ex: ID PesuPay)'),
+    sa.Column('methode_paiement', sa.Enum('CARTE_BANCAIRE', 'MOBILE_MONEY', 'VIREMENT_BANCAIRE', 'ESPECES', 'PESUPAY', name='methodepaiementenum'), nullable=False),
+    sa.Column('reference_transaction', sa.String(length=255), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['inscription_id'], ['inscriptions_formations.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Historique des paiements pour chaque inscription.'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_paiement_inscription', 'paiements', ['inscription_id'], unique=False)
     op.create_table('plans_intervention_individualises',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('genotype_id', sa.Integer(), nullable=True),
@@ -324,11 +310,8 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['genotype_id'], ['genotypes_individuels.id'], ),
     sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Plans d’intervention individualisés basés sur le génotype.'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_plan_dates', 'plans_intervention_individualises', ['date_creation', 'date_mise_a_jour'], unique=False)
-    op.create_index('idx_plan_genotype_statut', 'plans_intervention_individualises', ['genotype_id', 'statut'], unique=False)
     op.create_index(op.f('ix_plans_intervention_individualises_genotype_id'), 'plans_intervention_individualises', ['genotype_id'], unique=False)
     op.create_index(op.f('ix_plans_intervention_individualises_utilisateur_id'), 'plans_intervention_individualises', ['utilisateur_id'], unique=False)
     op.create_table('questions',
@@ -339,10 +322,8 @@ def upgrade() -> None:
     sa.Column('evaluation_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['evaluation_id'], ['evaluations.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Questions des évaluations.'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_question_type_eval', 'questions', ['type', 'evaluation_id'], unique=False)
     op.create_index(op.f('ix_questions_evaluation_id'), 'questions', ['evaluation_id'], unique=False)
     op.create_table('resultats_evaluations',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -354,11 +335,8 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['evaluation_id'], ['evaluations.id'], ),
     sa.ForeignKeyConstraint(['utilisateur_id'], ['utilisateurs.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Performances des apprenants aux évaluations.'
+    sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_resultat_date_note', 'resultats_evaluations', ['date_soumission', 'note'], unique=False)
-    op.create_index('idx_resultat_user_eval', 'resultats_evaluations', ['utilisateur_id', 'evaluation_id'], unique=False)
     op.create_index(op.f('ix_resultats_evaluations_evaluation_id'), 'resultats_evaluations', ['evaluation_id'], unique=False)
     op.create_index(op.f('ix_resultats_evaluations_utilisateur_id'), 'resultats_evaluations', ['utilisateur_id'], unique=False)
     op.create_table('sante_genotypes',
@@ -377,8 +355,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['genotype_id'], ['genotypes_individuels.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('genotype_id'),
-    comment='Informations sanitaires pour le génotype.'
+    sa.UniqueConstraint('genotype_id')
     )
     op.create_table('propositions',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -387,8 +364,7 @@ def upgrade() -> None:
     sa.Column('question_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['question_id'], ['questions.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    comment='Options de réponse pour QCM.'
+    sa.PrimaryKeyConstraint('id')
     )
     # ### end Alembic commands ###
 
@@ -400,24 +376,17 @@ def downgrade() -> None:
     op.drop_table('sante_genotypes')
     op.drop_index(op.f('ix_resultats_evaluations_utilisateur_id'), table_name='resultats_evaluations')
     op.drop_index(op.f('ix_resultats_evaluations_evaluation_id'), table_name='resultats_evaluations')
-    op.drop_index('idx_resultat_user_eval', table_name='resultats_evaluations')
-    op.drop_index('idx_resultat_date_note', table_name='resultats_evaluations')
     op.drop_table('resultats_evaluations')
     op.drop_index(op.f('ix_questions_evaluation_id'), table_name='questions')
-    op.drop_index('idx_question_type_eval', table_name='questions')
     op.drop_table('questions')
     op.drop_index(op.f('ix_plans_intervention_individualises_utilisateur_id'), table_name='plans_intervention_individualises')
     op.drop_index(op.f('ix_plans_intervention_individualises_genotype_id'), table_name='plans_intervention_individualises')
-    op.drop_index('idx_plan_genotype_statut', table_name='plans_intervention_individualises')
-    op.drop_index('idx_plan_dates', table_name='plans_intervention_individualises')
     op.drop_table('plans_intervention_individualises')
-    op.drop_index('idx_paiement_inscription', table_name='paiements')
     op.drop_table('paiements')
     op.drop_table('education_genotypes')
     op.drop_table('ascendance_genotypes')
     op.drop_index(op.f('ix_ressources_titre'), table_name='ressources')
     op.drop_table('ressources')
-    op.drop_index('idx_inscription_user_formation', table_name='inscriptions_formations')
     op.drop_table('inscriptions_formations')
     op.drop_index(op.f('ix_genotypes_individuels_utilisateur_id'), table_name='genotypes_individuels')
     op.drop_index(op.f('ix_genotypes_individuels_type'), table_name='genotypes_individuels')
@@ -426,21 +395,17 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_genotypes_individuels_nom'), table_name='genotypes_individuels')
     op.drop_index(op.f('ix_genotypes_individuels_maison_detention'), table_name='genotypes_individuels')
     op.drop_index(op.f('ix_genotypes_individuels_date_debut_detention'), table_name='genotypes_individuels')
-    op.drop_index('idx_genotype_nom_prenom', table_name='genotypes_individuels')
-    op.drop_index('idx_genotype_detention', table_name='genotypes_individuels')
     op.drop_table('genotypes_individuels')
     op.drop_table('evaluations')
-    op.drop_index('idx_chef_oeuvre_user_module', table_name='chefs_d_oeuvre')
     op.drop_table('chefs_d_oeuvre')
     op.drop_table('association_utilisateurs_permissions')
+    op.drop_table('association_utilisateurs_formations')
     op.drop_table('association_projets_collectifs_membres')
     op.drop_index(op.f('ix_actualites_id'), table_name='actualites')
     op.drop_table('actualites')
-    op.drop_index('idx_accreditation_user_formation', table_name='accreditations')
     op.drop_table('accreditations')
     op.drop_index(op.f('ix_utilisateurs_email'), table_name='utilisateurs')
     op.drop_table('utilisateurs')
-    op.drop_index('idx_projet_collectif_formation_statut', table_name='projets_collectifs')
     op.drop_table('projets_collectifs')
     op.drop_index(op.f('ix_modules_titre'), table_name='modules')
     op.drop_table('modules')
@@ -452,7 +417,5 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_formations_specialite'), table_name='formations')
     op.drop_index(op.f('ix_formations_date_fin'), table_name='formations')
     op.drop_index(op.f('ix_formations_date_debut'), table_name='formations')
-    op.drop_index('idx_formation_status_dates', table_name='formations')
-    op.drop_index('idx_formation_dates', table_name='formations')
     op.drop_table('formations')
     # ### end Alembic commands ###
