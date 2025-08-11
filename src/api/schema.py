@@ -85,6 +85,16 @@ class UtilisateurMinLight(BaseModel):
     class Config:
         from_attributes = True
 
+
+class UtilisateurBasic(BaseModel):
+    id: int
+    nom: str
+    prenom: Optional[str]
+    email: str
+    statut: StatutCompteEnum
+    class Config:
+        from_attributes = True
+
 class PaiementLight(BaseModel):
     id: int
     inscription_id: int
@@ -527,7 +537,7 @@ class Actualite(BaseModel):
     auteur: str = Field(..., max_length=150)
     created_at: datetime
     updated_at: datetime
-    utilisateur: UtilisateurLight
+    utilisateur: UtilisateurBasic
     class Config:
         from_attributes = True
 
