@@ -2393,19 +2393,19 @@ async def get_actualite(actualite_id: int, db: AsyncSession = Depends(get_async_
 
 @router.get(
     "/actualites",
-    response_model=List[Actualite],
+    response_model=List[ActualiteLight],
     tags=["Actualités"],
     summary="Lister toutes les actualités",
-    description="Récupère une liste paginée de toutes les actualités avec leurs relations."
+    description="Récupère une liste paginée de toutes les actualités (version light)."
 )
 async def list_actualites(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_async_db)):
     """
-    Liste toutes les actualités avec pagination.
+    Liste toutes les actualités avec pagination (schéma light).
 
     - **skip**: Nombre d'actualités à sauter (défaut: 0).
     - **limit**: Nombre maximum d'actualités à retourner (défaut: 100).
     - **Réponses**:
-        - **200**: Liste des actualités (ex. `[{"id": 1, "titre": "Nouvelle Formation", ...}, ...]`).
+        - **200**: Liste des actualités light (ex. `[{"id": 1, "titre": "Nouvelle Formation", ...}, ...]`).
         - **500**: Erreur interne du serveur.
     """
     return await actualite_service.get_all(db, skip, limit)
