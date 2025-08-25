@@ -40,9 +40,10 @@ RUN mkdir -p /app/static/documents \
              /app/static/images \
              /app/static/audios \
              /app/static/videos \
-             /app/logs && \
+             /app/logs \
              /app/upload && \
-    chown -R lafaom:lafaom /app/static /app/logs  /app/upload
+    chown -R lafaom:lafaom /app/static /app/logs /app/upload
+
 
 # Attribution finale des droits sur /app
 RUN chown -R lafaom:lafaom /app
