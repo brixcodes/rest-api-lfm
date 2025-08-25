@@ -47,6 +47,8 @@ RUN mkdir -p /app/static/documents \
 
 # Attribution finale des droits sur /app
 RUN chown -R lafaom:lafaom /app
+RUN mkdir -p /app/upload && chmod -R 777 /app/upload
+
 
 # Utilisation de l’utilisateur non-root
 USER lafaom
