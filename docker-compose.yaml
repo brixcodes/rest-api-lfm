@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+
+
+  app:
+    build: .
+    command: /start
+    volumes:
+      - .:/app  # À désactiver en production
+      - ./static:/app/static:rw
+    ports:
+      - "7100:8000"  # Redirection vers FastAPI
+    env_file: 
+      - .env
+    restart: unless-stopped
+    networks:
+      - database_network
+
+
+
+
+networks:
+
+  database_network:
+    name: afrolancer_backend_database_network
+    external: true
+
+  

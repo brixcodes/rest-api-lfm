@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Quitter immédiatement si une commande échoue
+set -o errexit
+# Échouer si une commande dans un pipeline échoue
+set -o pipefail
+# Échouer si une variable non définie est utilisée
+set -o nounset
+
+# Petite pause initiale (utile dans certains environnements Docker Compose)
+sleep 1
+
+# Fonction qui vérifie si PostgreSQL est prêt
+postgres_ready() {
+  python <<END
+import sys
+import psycopg2
+import os
+import urllib.parse as urlparse
+
+try:
+    url = urlparse.urlparse(os.environ["DATABASE_URL"])
+    conn = psycopg2.connect(
+        dbname=url.path[1:],
+        user=url.username,
+        password=url.password,
+        host=url.hostname,
+        port=url.port
+    )
+except psycopg2.OperationalError:
+    sys.exit(-1)
+sys.exit(0)
+END
+}
+
+# Attente active jusqu'à ce que PostgreSQL soit prêt
+until postgres_ready; do
+  >&2 echo "[Entrypoint] Waiting for PostgreSQL to become available..."
+  sleep 1
+done
+
+>&2 echo "[Entrypoint] PostgreSQL is available. Continuing..."
+
+# Lancer le processus passé en argument
+exec "$@"

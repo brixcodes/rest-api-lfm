@@ -1,0 +1,33 @@
+# FastAPI et serveur
+fastapi==0.115.0
+uvicorn==0.32.0
+python-multipart==0.0.12
+
+# Base de données
+sqlalchemy==2.0.35
+alembic==1.16.4
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+greenlet==3.2.3
+
+# Validation et sérialisation
+pydantic==2.9.2
+pydantic[email]==2.9.2
+pydantic-settings==2.4.0
+
+# Sécurité et authentification
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+PyJWT==2.10.1
+
+# HTTP et utilitaires
+httpx==0.25.2
+requests==2.31.0
+aiofiles==24.1.0
+cachetools==6.1.0
+tzdata==2025.2
+tzlocal==5.3.1
+aiosmtplib==4.0.1
+
+# Génération de données factices
+Faker==37.5.3

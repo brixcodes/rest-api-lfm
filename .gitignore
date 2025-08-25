@@ -1,0 +1,76 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Static files cache
+src/static/
+
+# Virtual environment
+venv/
+env/
+*.venv
+Pipfile
+Pipfile.lock
+
+# FastAPI & Python dependencies
+*.log
+*.sqlite3
+*.db
+instance/
+.mypy_cache/
+pytest_cache/
+__pypackages__/
+
+# IDE/editor config files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+.env
+*.env.local
+.envrc
+.env.*
+!.env.example
+
+# Pytest and coverage reports
+htmlcov/
+.coverage
+*.cover
+*.py,cover
+.tox/
+nosetests.xml
+coverage.xml
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Local deployment & build files
+build/
+dist/
+*.egg-info/
+*.spec
+
+# Celery task queue files
+celerybeat-schedule
+celerybeat.pid
+
+# Gunicorn logs
+gunicorn.log
+gunicorn.error.log
+
+# Uvicorn logs
+uvicorn.log
+
+
+# Ignore specific folders
+tests/
+static/
+upload/
