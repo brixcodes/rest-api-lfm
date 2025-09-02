@@ -16,15 +16,15 @@ class TimestampMixin(object):
 # ──────────────────────────────────────────────────────────────────────────────
 
 class CiviliteEnum(str, Enum):
-    MONSIEUR = "Mr."
-    MADAME = "Mme"
-    MADEMOISELLE = "Mlle"
-    AUTRE = "Autre"  
+    MONSIEUR = "MONSIEUR"
+    MADAME = "MADAME"
+    MADEMOISELLE = "MADEMOISELLE"
+    AUTRE = "AUTRE"  
     
 class RoleEnum(str, Enum):
-    CANDIDAT = "candidat"
-    ADMIN = "administrateur"
-    FORMATEUR = "formateur"  # Nouveau rôle pour les formateurs
+    CANDIDAT = "CANDIDAT"
+    ADMIN = "ADMIN"
+    FORMATEUR = "FORMATEUR"  # Nouveau rôle pour les formateurs
 
 class SpecialiteEnum(str, Enum):
     ACCUEIL = "accueil écoute familles"
@@ -98,7 +98,7 @@ class MethodePaiementEnum(str, Enum):
     ESPECES = "especes"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Nouveaux enums pour le système d'évaluation
+# Enums pour les évaluations
 # ──────────────────────────────────────────────────────────────────────────────
 
 class TypeEvaluationEnum(str, Enum):
@@ -109,6 +109,11 @@ class TypeEvaluationEnum(str, Enum):
     SOUTENANCE = "soutenance"      # Soutenance orale
     QUIZ = "quiz"                  # Quiz intermédiaire
     CAS_PRATIQUE = "cas_pratique"  # Étude de cas
+
+class TypeCorrectionEnum(str, Enum):
+    AUTO = "automatique"           # Correction automatique (QCM)
+    MANUELLE = "manuelle"          # Correction manuelle par formateur
+    MIXTE = "mixte"                # Partie auto + partie manuelle
 
 class StatutEvaluationEnum(str, Enum):
     DRAFT = "brouillon"            # En cours de création
@@ -123,7 +128,8 @@ class StatutResultatEnum(str, Enum):
     ECHEC = "échec"                # Échoué
     ABANDONNE = "abandonné"        # Abandonné
 
-class TypeCorrectionEnum(str, Enum):
-    AUTO = "automatique"           # Correction automatique (QCM)
-    MANUELLE = "manuelle"          # Correction manuelle par formateur
-    MIXTE = "mixte"                # Partie auto + partie manuelle
+class TypeQuestionEnum(str, Enum):
+    QCM = "qcm"
+    TEXTE_LIBRE = "texte_libre"
+    PRATIQUE = "pratique"
+    FICHIER = "fichier"

@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, Form
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, Form, Query, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 
-from src.api.model import Adresse, Paiement, PieceJointe, Reclamation, Utilisateur
+from src.api.model import Adresse, PieceJointe, Reclamation, Utilisateur
 from src.api.schema import (
     AdresseCreate, AdresseUpdate, AdresseResponse, AdresseLight,
     UtilisateurCreate, UtilisateurUpdate, UtilisateurResponse, UtilisateurLight,
+    CandidatCreate, FormateurCreate, AdministrateurCreate,
     CentreFormationCreate, CentreFormationUpdate, CentreFormationResponse, CentreFormationLight,
     FormationCreate, FormationUpdate, FormationResponse, FormationLight,
     SessionFormationCreate, SessionFormationUpdate, SessionFormationResponse, SessionFormationLight,
@@ -18,7 +19,6 @@ from src.api.schema import (
     DossierStatutUpdate, DossierStatutResponse,
     PieceJointeCreate, PieceJointeUpdate, PieceJointeResponse, PieceJointeLight,
     ReclamationCreate, ReclamationUpdate, ReclamationResponse, ReclamationLight,
-    PaiementCreate, PaiementUpdate, PaiementResponse, PaiementLight,
     PasswordChangeRequest, PasswordChangeResponse, PasswordResetByEmailResponse,
     InformationDescriptiveCreate, InformationDescriptiveUpdate, InformationDescriptiveResponse,
     LoginRequest, LoginResponse,
@@ -27,18 +27,19 @@ from src.api.schema import (
     ResultatEvaluationResponse, ResultatEvaluationLight,
     CertificatResponse, CertificatLight,
     QuestionEvaluationCreate, QuestionEvaluationUpdate, QuestionEvaluationResponse,
-    ReponseCandidatCreate, ReponseCandidatResponse
+    ReponseCandidatCreate, ReponseCandidatResponse,
+    PaiementCinetPayCreate, PaiementCinetPayResponse
 )
 from src.api.service import (
     AddressService, FileService, UserService, CentreService, FormationService,
     SessionFormationService, ModuleService, RessourceService,
-    DossierService, PieceJointeService, ReclamationService, PaiementService,
+    DossierService, PieceJointeService, ReclamationService,
     InformationDescriptiveService, EvaluationService, ResultatEvaluationService, CertificatService,
-    QuestionEvaluationService, ReponseCandidatService
+    QuestionEvaluationService, ReponseCandidatService, CinetPayService
 )
 from src.api.security import create_access_token, get_current_active_user
 from src.util.db.database import get_async_db
-from src.util.helper.enum import StatutCandidatureEnum, RoleEnum
+from src.util.helper.enum import StatutCandidatureEnum, RoleEnum, StatutReclamationEnum
 
 
 # ============================
@@ -320,6 +321,79 @@ async def get_user_profile_from_token(
     return await service.get_by_id(current_user.id, load_relations=True)
 
 # ============================
+# Routes spécifiques pour chaque type d'utilisateur
+# ============================
+
+@utilisateurs.post(
+    "/candidat",
+    response_model=UtilisateurResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Créer un nouveau candidat",
+    description="Crée un nouveau candidat avec les données fournies. Le champ 'actif' est automatiquement défini à True."
+)
+async def create_candidat(
+    candidat_data: CandidatCreate,
+    db: AsyncSession = Depends(get_async_db)
+):
+    service = UserService(db)
+    # Créer directement l'utilisateur avec tous les champs du schéma CandidatCreate
+    user_data = candidat_data.model_dump()
+    user_data["role"] = RoleEnum.CANDIDAT
+    user_data["actif"] = True
+    
+    # Supprimer le mot de passe du dictionnaire pour le traiter séparément
+    password = user_data.pop("password")
+    
+    # Créer l'utilisateur avec tous les champs
+    return await service.create_with_password_detailed(user_data, password)
+
+@utilisateurs.post(
+    "/formateur",
+    response_model=UtilisateurResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Créer un nouveau formateur",
+    description="Crée un nouveau formateur avec les données fournies. Le champ 'actif' est automatiquement défini à True."
+)
+async def create_formateur(
+    formateur_data: FormateurCreate,
+    db: AsyncSession = Depends(get_async_db)
+):
+    service = UserService(db)
+    # Créer directement l'utilisateur avec tous les champs du schéma FormateurCreate
+    user_data = formateur_data.model_dump()
+    user_data["role"] = RoleEnum.FORMATEUR
+    user_data["actif"] = True
+    
+    # Supprimer le mot de passe du dictionnaire pour le traiter séparément
+    password = user_data.pop("password")
+    
+    # Créer l'utilisateur avec tous les champs
+    return await service.create_with_password_detailed(user_data, password)
+
+@utilisateurs.post(
+    "/administrateur",
+    response_model=UtilisateurResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Créer un nouvel administrateur",
+    description="Crée un nouvel administrateur avec les données fournies. Le champ 'actif' est automatiquement défini à True."
+)
+async def create_administrateur(
+    admin_data: AdministrateurCreate,
+    db: AsyncSession = Depends(get_async_db)
+):
+    service = UserService(db)
+    # Créer directement l'utilisateur avec tous les champs du schéma AdministrateurCreate
+    user_data = admin_data.model_dump()
+    user_data["role"] = RoleEnum.ADMIN
+    user_data["actif"] = True
+    
+    # Supprimer le mot de passe du dictionnaire pour le traiter séparément
+    password = user_data.pop("password")
+    
+    # Créer l'utilisateur avec tous les champs
+    return await service.create_with_password_detailed(user_data, password)
+
+# ============================
 # Router Centres Formations
 # ============================
 centres_formations = APIRouter(
@@ -587,10 +661,10 @@ async def get_session_formation(
 
 @sessions_formations.get(
     "",
-    response_model=List[SessionFormationLight],
+    response_model=List[SessionFormationResponse],
     status_code=status.HTTP_200_OK,
     summary="Lister toutes les sessions de formation",
-    description="Récupère une liste paginée de toutes les sessions de formation avec leurs informations de base."
+    description="Récupère une liste paginée de toutes les sessions de formation avec leurs informations complètes."
 )
 async def get_all_sessions_formations(
     skip: int = 0,
@@ -696,10 +770,10 @@ async def get_module(
 
 @modules.get(
     "",
-    response_model=List[ModuleLight],
+    response_model=List[ModuleResponse],
     status_code=status.HTTP_200_OK,
     summary="Lister tous les modules",
-    description="Récupère une liste paginée de tous les modules avec leurs informations de base."
+    description="Récupère une liste paginée de tous les modules avec leurs informations complètes."
 )
 async def get_all_modules(
     skip: int = 0,
@@ -708,6 +782,21 @@ async def get_all_modules(
 ):
     service = ModuleService(db)
     return await service.get_all(skip, limit)
+
+@modules.get(
+    "/formation/{formation_id}",
+    response_model=List[ModuleResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Lister les modules d'une formation",
+    description="Récupère tous les modules d'une formation spécifique classés automatiquement par ordre."
+)
+async def get_modules_by_formation(
+    formation_id: int,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Récupère tous les modules d'une formation classés par ordre"""
+    service = ModuleService(db)
+    return await service.get_modules_by_formation(formation_id)
 
 @modules.put(
     "/{module_id}",
@@ -788,6 +877,21 @@ async def get_all_ressources(
     service = RessourceService(db)
     return await service.get_all(skip, limit)
 
+@ressources.get(
+    "/module/{module_id}",
+    response_model=List[RessourceResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Lister les ressources d'un module",
+    description="Récupère toutes les ressources d'un module spécifique avec leurs détails complets."
+)
+async def get_ressources_by_module(
+    module_id: int,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Récupère toutes les ressources d'un module spécifique"""
+    service = RessourceService(db)
+    return await service.get_ressources_by_module(module_id)
+
 @ressources.put(
     "/{ressource_id}",
     response_model=RessourceResponse,
@@ -854,18 +958,34 @@ async def get_dossier_candidature(
 
 @dossiers_candidatures.get(
     "",
-    response_model=List[DossierCandidatureLight],
+    response_model=List[DossierCandidatureResponse],
     status_code=status.HTTP_200_OK,
     summary="Lister tous les dossiers de candidature",
     description="Récupère une liste paginée de tous les dossiers de candidature avec leurs informations de base."
 )
 async def get_all_dossiers_candidatures(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, description="Nombre d'éléments à ignorer"),
+    limit: int = Query(100, ge=1, le=1000, description="Nombre maximum d'éléments à retourner"),
     db: AsyncSession = Depends(get_async_db)
 ):
     service = DossierService(db)
     return await service.get_all(skip, limit)
+
+@dossiers_candidatures.get(
+    "/candidat/{candidat_id}",
+    response_model=List[DossierCandidatureResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Lister les candidatures d'un candidat",
+    description="Récupère une liste paginée de toutes les candidatures d'un candidat spécifique avec leurs informations complètes."
+)
+async def get_candidatures_by_candidat(
+    candidat_id: int = Path(..., description="ID du candidat"),
+    skip: int = Query(0, ge=0, description="Nombre d'éléments à ignorer"),
+    limit: int = Query(100, ge=1, le=1000, description="Nombre maximum d'éléments à retourner"),
+    db: AsyncSession = Depends(get_async_db)
+):
+    service = DossierService(db)
+    return await service.get_by_candidat(candidat_id, skip, limit)
 
 @dossiers_candidatures.put(
     "/{dossier_id}",
@@ -996,6 +1116,8 @@ async def annuler_dossier(
     )
     return await service.changer_statut(dossier_id, statut_data)
 
+
+
 # ============================
 # Router Pieces Jointes
 # ============================
@@ -1113,20 +1235,34 @@ async def get_reclamation(
 
 @reclamations.get(
     "",
-    response_model=List[ReclamationLight],
+    response_model=List[ReclamationResponse],
     status_code=status.HTTP_200_OK,
     summary="Lister toutes les réclamations",
-    description="Récupère une liste paginée de toutes les réclamations avec leurs informations de base."
+    description="Récupère une liste paginée de toutes les réclamations avec leurs informations complètes."
 )
 async def get_all_reclamations(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, description="Nombre d'éléments à ignorer"),
+    limit: int = Query(100, ge=1, le=1000, description="Nombre maximum d'éléments à retourner"),
     db: AsyncSession = Depends(get_async_db)
 ):
     service = ReclamationService(db)
-    result = await service.session.execute(select(Reclamation).offset(skip).limit(limit))
-    reclamations_list = result.scalars().all()
-    return [ReclamationLight.model_validate(rec, from_attributes=True) for rec in reclamations_list]
+    return await service.get_all(skip=skip, limit=limit)
+
+@reclamations.get(
+    "/user/{user_id}",
+    response_model=List[ReclamationResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Lister les réclamations d'un utilisateur",
+    description="Récupère une liste paginée de toutes les réclamations d'un utilisateur spécifique."
+)
+async def get_reclamations_by_user(
+    user_id: int = Path(..., description="ID de l'utilisateur"),
+    skip: int = Query(0, ge=0, description="Nombre d'éléments à ignorer"),
+    limit: int = Query(100, ge=1, le=1000, description="Nombre maximum d'éléments à retourner"),
+    db: AsyncSession = Depends(get_async_db)
+):
+    service = ReclamationService(db)
+    return await service.get_by_user(user_id, skip=skip, limit=limit)
 
 @reclamations.put(
     "/{reclamation_id}",
@@ -1156,6 +1292,55 @@ async def delete_reclamation(
     service = ReclamationService(db)
     await service.delete(reclamation_id)
 
+@reclamations.patch(
+    "/{reclamation_id}/status",
+    response_model=ReclamationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Changer le statut d'une réclamation",
+    description="Change le statut d'une réclamation (nouveau, en cours, clôturé)."
+)
+async def change_reclamation_status(
+    reclamation_id: int,
+    status_update: dict,
+    db: AsyncSession = Depends(get_async_db)
+):
+    service = ReclamationService(db)
+    new_status = status_update.get("statut")
+    commentaire = status_update.get("commentaire")
+    
+    if not new_status:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Le champ 'statut' est requis")
+    
+    return await service.change_status(reclamation_id, new_status, commentaire)
+
+@reclamations.patch(
+    "/{reclamation_id}/en-cours",
+    response_model=ReclamationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Mettre une réclamation en cours",
+    description="Met le statut d'une réclamation à 'en cours'."
+)
+async def set_reclamation_en_cours(
+    reclamation_id: int,
+    db: AsyncSession = Depends(get_async_db)
+):
+    service = ReclamationService(db)
+    return await service.change_status(reclamation_id, StatutReclamationEnum.EN_COURS.value)
+
+@reclamations.patch(
+    "/{reclamation_id}/cloture",
+    response_model=ReclamationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Clôturer une réclamation",
+    description="Met le statut d'une réclamation à 'clôturé'."
+)
+async def set_reclamation_cloture(
+    reclamation_id: int,
+    db: AsyncSession = Depends(get_async_db)
+):
+    service = ReclamationService(db)
+    return await service.change_status(reclamation_id, StatutReclamationEnum.CLOTURE.value)
+
 # ============================
 # Router Paiements
 # ============================
@@ -1164,78 +1349,112 @@ paiements = APIRouter(
     tags=["paiements"],
 )
 
-@paiements.post(
-    "",
-    response_model=PaiementResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Créer un nouveau paiement",
-    description="Crée un nouveau paiement pour un dossier avec les données fournies."
-)
-async def create_paiement(
-    paiement_data: PaiementCreate,
-    db: AsyncSession = Depends(get_async_db)
-):
-    service = PaiementService(db)
-    return await service.create(paiement_data)
 
-@paiements.get(
-    "/{paiement_id}",
-    response_model=PaiementResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Récupérer un paiement par ID",
-    description="Récupère les détails complets d'un paiement spécifié par son ID."
-)
-async def get_paiement(
-    paiement_id: int,
+    
+# Routes pour les paiements CinetPay
+@paiements.post("/initier", response_model=PaiementCinetPayResponse)
+async def initier_paiement(
+    paiement_data: PaiementCinetPayCreate,
     db: AsyncSession = Depends(get_async_db)
 ):
-    service = PaiementService(db)
-    return await service.get_by_id(paiement_id)
+    """Initier un nouveau paiement CinetPay"""
+    cinetpay_service = CinetPayService(db)
+    return await cinetpay_service.create_payment(paiement_data)
 
-@paiements.get(
-    "",
-    response_model=List[PaiementLight],
-    status_code=status.HTTP_200_OK,
-    summary="Lister tous les paiements",
-    description="Récupère une liste paginée de tous les paiements avec leurs informations de base."
-)
-async def get_all_paiements(
-    skip: int = 0,
-    limit: int = 100,
+@paiements.get("/cinetpay/{payment_id}", response_model=PaiementCinetPayResponse)
+async def get_paiement_cinetpay(
+    payment_id: int,
     db: AsyncSession = Depends(get_async_db)
 ):
-    service = PaiementService(db)
-    result = await service.session.execute(select(Paiement).offset(skip).limit(limit))
-    paiements_list = result.scalars().all()
-    return [PaiementLight.model_validate(pai, from_attributes=True) for pai in paiements_list]
+    """Récupérer un paiement CinetPay par ID"""
+    cinetpay_service = CinetPayService(db)
+    return await cinetpay_service.get_payment_by_id(payment_id)
 
-@paiements.put(
-    "/{paiement_id}",
-    response_model=PaiementResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Mettre à jour un paiement",
-    description="Met à jour les informations d'un paiement existant."
-)
-async def update_paiement(
-    paiement_id: int,
-    paiement_data: PaiementUpdate,
+@paiements.get("/transaction/{transaction_id}", response_model=PaiementCinetPayResponse)
+async def get_paiement_by_transaction(
+    transaction_id: str,
     db: AsyncSession = Depends(get_async_db)
 ):
-    service = PaiementService(db)
-    return await service.update(paiement_id, paiement_data)
+    """Récupérer un paiement par transaction_id"""
+    cinetpay_service = CinetPayService(db)
+    return await cinetpay_service.get_payment_by_transaction_id(transaction_id)
 
-@paiements.delete(
-    "/{paiement_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Supprimer un paiement",
-    description="Supprime un paiement spécifié par son ID."
-)
-async def delete_paiement(
-    paiement_id: int,
+@paiements.get("/utilisateur/{utilisateur_id}", response_model=List[PaiementCinetPayResponse])
+async def get_paiements_utilisateur(
+    utilisateur_id: int,
     db: AsyncSession = Depends(get_async_db)
 ):
-    service = PaiementService(db)
-    await service.delete(paiement_id)
+    """Récupérer tous les paiements d'un utilisateur"""
+    cinetpay_service = CinetPayService(db)
+    return await cinetpay_service.get_payments_by_user(utilisateur_id)
+
+@paiements.post("/notification")
+async def notification_paiement(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Endpoint de notification CinetPay"""
+    try:
+        # Récupérer les données de la notification
+        form_data = await request.form()
+        data = dict(form_data)
+        
+        # Récupérer le token HMAC de l'en-tête
+        x_token = request.headers.get("x-token")
+        
+        # Vérifier le token HMAC
+        cinetpay_service = CinetPayService(db)
+        if not cinetpay_service._verify_hmac_token(data, x_token):
+            raise HTTPException(status_code=400, detail="Token HMAC invalide")
+        
+        # Traiter la notification
+        transaction_id = data.get("cpm_trans_id")
+        if transaction_id:
+            # Vérifier le statut auprès de CinetPay
+            verify_result = await cinetpay_service.verify_payment(transaction_id)
+            
+            # Mettre à jour le statut
+            await cinetpay_service.update_payment_status(transaction_id, verify_result)
+            
+            logging.info(f"✅ Notification traitée pour {transaction_id}")
+        
+        return {"status": "success"}
+        
+    except Exception as e:
+        logging.error(f"Erreur lors du traitement de la notification: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@paiements.post("/retour")
+async def retour_paiement(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Endpoint de retour après paiement"""
+    try:
+        # Récupérer les données de retour
+        form_data = await request.form()
+        data = dict(form_data)
+        
+        transaction_id = data.get("transaction_id")
+        if transaction_id:
+            # Récupérer le paiement
+            cinetpay_service = CinetPayService(db)
+            paiement = await cinetpay_service.get_payment_by_transaction_id(transaction_id)
+            
+            # Retourner les informations du paiement
+            return {
+                "transaction_id": transaction_id,
+                "statut": paiement.statut,
+                "montant": paiement.montant,
+                "devise": paiement.devise,
+                "description": paiement.description
+            }
+        
+        return {"message": "Aucune transaction spécifiée"}
+        
+    except Exception as e:
+        logging.error(f"Erreur lors du traitement du retour: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     
 # ──────────────────────────────────────────────────────────────
 # Router Évaluations

@@ -84,6 +84,73 @@ class UtilisateurCreate(BaseModel):
     role: RoleEnum = RoleEnum.CANDIDAT
     actif: bool = True
 
+# Schémas spécifiques pour chaque type d'utilisateur
+class CandidatCreate(BaseModel):
+    civilite: Optional[CiviliteEnum] = None
+    nom: str = Field(..., max_length=100)
+    prenom: str = Field(..., max_length=100)
+    date_naissance: Optional[date] = None
+    email: str = Field(..., max_length=120)
+    telephone_mobile: Optional[str] = Field(None, max_length=30)
+    telephone: Optional[str] = Field(None, max_length=30)
+    nationalite: Optional[str] = Field(None, max_length=100)
+    password: str = Field(..., min_length=8, max_length=255)
+    
+    # Informations professionnelles
+    situation_professionnelle: Optional[str] = Field(None, max_length=120)
+    experience_professionnelle_en_mois: Optional[int] = None
+    employeur: Optional[str] = Field(None, max_length=120)
+    categorie_socio_professionnelle: Optional[str] = Field(None, max_length=120)
+    fonction: Optional[str] = Field(None, max_length=120)
+    
+    # Parcours scolaire
+    dernier_diplome_obtenu: Optional[str] = Field(None, max_length=120)
+    date_obtention_dernier_diplome: Optional[date] = None
+
+class FormateurCreate(BaseModel):
+    civilite: Optional[CiviliteEnum] = None
+    nom: str = Field(..., max_length=100)
+    prenom: str = Field(..., max_length=100)
+    date_naissance: Optional[date] = None
+    email: str = Field(..., max_length=120)
+    telephone_mobile: Optional[str] = Field(None, max_length=30)
+    telephone: Optional[str] = Field(None, max_length=30)
+    nationalite: Optional[str] = Field(None, max_length=100)
+    password: str = Field(..., min_length=8, max_length=255)
+    
+    # Informations professionnelles spécifiques aux formateurs
+    situation_professionnelle: Optional[str] = Field(None, max_length=120)
+    experience_professionnelle_en_mois: Optional[int] = None
+    employeur: Optional[str] = Field(None, max_length=120)
+    categorie_socio_professionnelle: Optional[str] = Field(None, max_length=120)
+    fonction: Optional[str] = Field(None, max_length=120)
+    
+    # Parcours scolaire
+    dernier_diplome_obtenu: Optional[str] = Field(None, max_length=120)
+    date_obtention_dernier_diplome: Optional[date] = None
+
+class AdministrateurCreate(BaseModel):
+    civilite: Optional[CiviliteEnum] = None
+    nom: str = Field(..., max_length=100)
+    prenom: str = Field(..., max_length=100)
+    date_naissance: Optional[date] = None
+    email: str = Field(..., max_length=120)
+    telephone_mobile: Optional[str] = Field(None, max_length=30)
+    telephone: Optional[str] = Field(None, max_length=30)
+    nationalite: Optional[str] = Field(None, max_length=100)
+    password: str = Field(..., min_length=8, max_length=255)
+    
+    # Informations professionnelles
+    situation_professionnelle: Optional[str] = Field(None, max_length=120)
+    experience_professionnelle_en_mois: Optional[int] = None
+    employeur: Optional[str] = Field(None, max_length=120)
+    categorie_socio_professionnelle: Optional[str] = Field(None, max_length=120)
+    fonction: Optional[str] = Field(None, max_length=120)
+    
+    # Parcours scolaire
+    dernier_diplome_obtenu: Optional[str] = Field(None, max_length=120)
+    date_obtention_dernier_diplome: Optional[date] = None
+
 class UtilisateurUpdate(BaseModel):
     civilite: Optional[CiviliteEnum] = None
     nom: Optional[str] = Field(None, max_length=100)
@@ -112,7 +179,7 @@ class UtilisateurLight(BaseModel):
     nom: str
     prenom: str
     email: str
-    nationalite: str
+    nationalite: Optional[str] = None
     role: RoleEnum
 
 class UtilisateurResponse(BaseModel):
@@ -181,6 +248,7 @@ class TokenData(BaseModel):
 
 # Schémas pour les évaluations
 class QuestionEvaluationCreate(BaseModel):
+    evaluation_id: int = Field(..., description="ID de l'évaluation")
     question: str = Field(..., description="Texte de la question")
     type_question: str = Field(..., description="Type de question (choix_multiple, texte_libre, fichier)")
     ordre: int = Field(0, description="Ordre de la question dans l'évaluation")
@@ -236,7 +304,6 @@ class EvaluationCreate(BaseModel):
     type_correction: TypeCorrectionEnum = Field(..., description="Type de correction")
     instructions: Optional[str] = Field(None, description="Instructions pour les candidats")
     consignes_correction: Optional[str] = Field(None, description="Consignes pour les correcteurs")
-    questions: Optional[List[QuestionEvaluationCreate]] = Field([], description="Liste des questions")
 
 class EvaluationUpdate(BaseModel):
     titre: Optional[str] = None
@@ -292,15 +359,20 @@ class EvaluationLight(BaseModel):
 
 # Schémas pour les réponses des candidats
 class ReponseCandidatCreate(BaseModel):
+    resultat_id: int = Field(..., description="ID du résultat d'évaluation")
     question_id: int = Field(..., description="ID de la question")
     reponse_texte: Optional[str] = Field(None, description="Réponse textuelle")
     reponse_fichier_url: Optional[str] = Field(None, description="URL du fichier uploadé")
     reponse_json: Optional[str] = Field(None, description="Réponse au format JSON")
+    reponse_choix: Optional[str] = Field(None, description="Choix sélectionné (pour QCM)")
+    temps_reponse_secondes: Optional[int] = Field(None, description="Temps de réponse en secondes")
 
 class ReponseCandidatUpdate(BaseModel):
     reponse_texte: Optional[str] = None
     reponse_fichier_url: Optional[str] = None
     reponse_json: Optional[str] = None
+    reponse_choix: Optional[str] = None
+    temps_reponse_secondes: Optional[int] = None
 
 class ReponseCandidatResponse(BaseModel):
     id: int
@@ -309,6 +381,8 @@ class ReponseCandidatResponse(BaseModel):
     reponse_texte: Optional[str] = None
     reponse_fichier_url: Optional[str] = None
     reponse_json: Optional[str] = None
+    reponse_choix: Optional[str] = None
+    temps_reponse_secondes: Optional[int] = None
     points_obtenus: Optional[float] = None
     points_maximaux: Optional[float] = None
     commentaire_correction: Optional[str] = None
@@ -503,6 +577,7 @@ class InformationDescriptiveResponse(BaseModel):
     evaluation: Optional[str]
     created_at: datetime
     updated_at: datetime
+    formation: FormationLight
 
 # Formation Schemas
 class FormationCreate(BaseModel): 
@@ -548,9 +623,9 @@ class FormationResponse(FormationLight):
     devise: DeviseEnum
     created_at: datetime
     updated_at: datetime
-    sessions: List["SessionFormationLight"]
-    modules: List["ModuleResponse"]
-    dossiers: List["DossierCandidatureLight"]
+    sessions: List["SessionFormationLight"] = []
+    modules: List["ModuleResponse"] = []
+    dossiers: List["DossierCandidatureLight"] = []
     information_descriptive: Optional[InformationDescriptiveResponse] = None
 
 # SessionFormation Schemas
@@ -580,6 +655,19 @@ class SessionFormationLight(BaseModel):
     date_debut: Optional[date]
     statut: StatutSessionEnum
 
+class SessionFormationDossierLight(BaseModel):
+    """Schéma light de session pour les dossiers de candidature avec informations essentielles"""
+    id: int
+    formation_id: int
+    centre_id: Optional[int]
+    date_debut: Optional[date]
+    date_fin: Optional[date]
+    date_limite_inscription: Optional[date]
+    places_disponibles: Optional[int]
+    statut: StatutSessionEnum
+    modalite: Optional[ModaliteEnum]
+    centre: Optional[CentreFormationLight]
+
 class SessionFormationResponse(SessionFormationLight):
     centre_id: Optional[int]
     date_fin: Optional[date]
@@ -606,14 +694,15 @@ class ModuleCreate(BaseModel):
     titre: str = Field(..., max_length=255)
     description: Optional[str] = None
     ordre: Optional[int] = None
-    ressources: Optional[List["RessourceCreate"]] = None
+    
+    class Config:
+        from_attributes = True
 
 class ModuleUpdate(BaseModel):
     formation_id: Optional[int] = None
     titre: Optional[str] = Field(None, max_length=255)
     description: Optional[str] = None
     ordre: Optional[int] = None
-    ressources: Optional[List["RessourceCreate"]] = None
 
 class ModuleLight(BaseModel):
     id: int
@@ -623,10 +712,10 @@ class ModuleLight(BaseModel):
 class ModuleResponse(ModuleLight):
     formation_id: int
     description: Optional[str]
-    created_at: datetime
-    updated_at: datetime
-    formation: FormationLight
-    ressources: List["RessourceResponse"]
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    formation: Optional[FormationLight] = None
+    ressources: List["RessourceResponse"] = []
 
 # Ressource Schemas
 class RessourceCreate(BaseModel):
@@ -659,33 +748,34 @@ class RessourceResponse(RessourceLight):
 # DossierCandidature Schemas
 class DossierCandidatureCreate(BaseModel):
     utilisateur_id: int
-    formation_id: int
-    session_id: Optional[int] = None
-    # numero_candidature est généré automatiquement par le système
-    statut: StatutCandidatureEnum = StatutCandidatureEnum.RECUE
-    date_soumission: Optional[datetime] = None
+    session_id: int
+    objet: str
+    
+class DossierStatutUpdate(BaseModel):
+    statut: StatutCandidatureEnum
     motif_refus: Optional[str] = None
-    frais_inscription_montant: Optional[float] = None
-    frais_formation_montant: Optional[float] = None
-    devise: Optional[DeviseEnum] = None
-    # pieces_jointes: Optional[List["PieceJointeCreate"]] = None
-    # paiements: Optional[List["PaiementCreate"]] = None
-    # reclamations: Optional[List["ReclamationCreate"]] = None
-
+    
+class DossierStatutResponse(BaseModel):
+    id: int
+    numero_candidature: Optional[str]
+    ancien_statut: StatutCandidatureEnum
+    nouveau_statut: StatutCandidatureEnum
+    motif_refus: Optional[str]
+    date_soumission: Optional[datetime]
+    commentaire: Optional[str]
+    date_modification: datetime
+    
 class DossierCandidatureUpdate(BaseModel):
     utilisateur_id: Optional[int] = None
     formation_id: Optional[int] = None
     session_id: Optional[int] = None
-    # numero_candidature ne peut pas être modifié par l'utilisateur
+    objet: Optional[str] = Field(None, description="Objet de la candidature")
     statut: Optional[StatutCandidatureEnum] = None
     date_soumission: Optional[datetime] = None
     motif_refus: Optional[str] = None
     frais_inscription_montant: Optional[float] = None
     frais_formation_montant: Optional[float] = None
     devise: Optional[DeviseEnum] = None
-    pieces_jointes: Optional[List["PieceJointeCreate"]] = None
-    paiements: Optional[List["PaiementCreate"]] = None
-    reclamations: Optional[List["ReclamationCreate"]] = None
 
 # Schémas pour le changement de statut
 class DossierStatutUpdate(BaseModel):
@@ -700,36 +790,33 @@ class DossierStatutResponse(BaseModel):
     ancien_statut: StatutCandidatureEnum
     nouveau_statut: StatutCandidatureEnum
     motif_refus: Optional[str]
-    date_soumission: Optional[datetime]
-    commentaire: Optional[str]
-    date_modification: datetime
-    modifie_par: Optional[str] = Field(None, description="Nom de l'utilisateur qui a modifié le statut")
 
 class DossierCandidatureLight(BaseModel):
     id: int
     utilisateur_id: int
-    formation_id: int
+    formation_id: Optional[int]  # Peut être None dans certains cas
+    numero_candidature: Optional[str]
     statut: StatutCandidatureEnum
 
 class DossierCandidatureResponse(DossierCandidatureLight):
     session_id: Optional[int]
     numero_candidature: Optional[str]
     date_soumission: Optional[datetime]
+    objet: Optional[str]
     motif_refus: Optional[str]
     frais_inscription_montant: Optional[float]
     frais_formation_montant: Optional[float]
     devise: Optional[DeviseEnum]
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
     utilisateur: UtilisateurLight
-    formation: FormationLight
-    session: Optional[SessionFormationLight]
-    reclamations: List["ReclamationLight"]
-    paiements: List["PaiementLight"]
-    pieces_jointes: List["PieceJointeResponse"]
-    total_paye: float
-    reste_a_payer_inscription: float
-    reste_a_payer_formation: float
+    formation: Optional[FormationLight]  # Peut être None si pas de formation
+    session: Optional["SessionFormationDossierLight"] = None
+    pieces_jointes: List["PieceJointeResponse"] = []
+    reclamations: List["ReclamationLight"] = []
+    total_paye: float = 0.0
+    reste_a_payer_inscription: float = 0.0
+    reste_a_payer_formation: float = 0.0
 
 # PieceJointe Schemas
 class PieceJointeCreate(BaseModel):
@@ -737,7 +824,6 @@ class PieceJointeCreate(BaseModel):
     type_document: str = Field(..., max_length=100)
     chemin_fichier: str = Field(..., max_length=255)
     description: Optional[str] = None
-    date_upload: Optional[datetime] = None
 
 class PieceJointeUpdate(BaseModel):
     dossier_id: Optional[int] = None
@@ -762,25 +848,25 @@ class PieceJointeResponse(PieceJointeLight):
 # Reclamation Schemas
 class ReclamationCreate(BaseModel):
     dossier_id: int
-    auteur_id: int
-    numero_reclamation: Optional[str] = Field(None, max_length=50)
+    # auteur_id: Optional[int] = None  # Récupéré automatiquement depuis le dossier_id
+    # numero_reclamation est généré automatiquement par le système
     objet: str = Field(..., max_length=255)
     type_reclamation: Optional[str] = Field(None, max_length=100)
     priorite: Optional[str] = Field(None, max_length=50)
-    statut: StatutReclamationEnum = StatutReclamationEnum.NOUVEAU
+    # statut est géré par le système (toujours NOUVEAU à la création)
     description: Optional[str] = None
-    date_cloture: Optional[datetime] = None
+    # date_cloture est gérée par le système lors de la clôture
 
 class ReclamationUpdate(BaseModel):
     dossier_id: Optional[int] = None
     auteur_id: Optional[int] = None
-    numero_reclamation: Optional[str] = Field(None, max_length=50)
+    # numero_reclamation ne peut pas être modifié (géré par le système)
     objet: Optional[str] = Field(None, max_length=255)
     type_reclamation: Optional[str] = Field(None, max_length=100)
     priorite: Optional[str] = Field(None, max_length=50)
-    statut: Optional[StatutReclamationEnum] = None
+    # statut ne peut pas être modifié via update (utiliser change_status)
+    # date_cloture ne peut pas être modifiée manuellement (gérée par le système)
     description: Optional[str] = None
-    date_cloture: Optional[datetime] = None
 
 class ReclamationLight(BaseModel):
     id: int
@@ -797,48 +883,102 @@ class ReclamationResponse(ReclamationLight):
     date_cloture: Optional[datetime]
     created_at: datetime
     updated_at: datetime
-    dossier: DossierCandidatureLight
-    auteur: UtilisateurLight
+    dossier: Optional[DossierCandidatureLight] = None
+    auteur: Optional[UtilisateurLight] = None
 
-# Paiement Schemas
+# Paiement Schemas - Système unifié
 class PaiementCreate(BaseModel):
-    dossier_id: int
-    type_paiement: TypePaiementEnum
-    montant: float
-    devise: DeviseEnum
-    statut: StatutPaiementEnum = StatutPaiementEnum.PENDING
-    methode: Optional[MethodePaiementEnum] = None
-    reference_externe: Optional[str] = Field(None, max_length=120)
-    message: Optional[str] = Field(None, max_length=255)
-    paye_le: Optional[datetime] = None
-    date_echeance: Optional[date] = None
+    """Schéma pour la création d'un paiement - Le client ne fournit que les informations essentielles"""
+    utilisateur_id: int
+    session_id: int
+    montant: int  # Montant en centimes
+    devise: str = "XAF"  # Devise par défaut
+    description: str = Field(..., max_length=500)
+    type_paiement: str = Field(..., description="Type de paiement: INSCRIPTION, FORMATION, AUTRE")
+    metadata_paiement: Optional[str] = Field(None, max_length=500, description="Métadonnées optionnelles")
+    
+    # Champs optionnels pour personnalisation
+    notify_url: Optional[str] = Field(None, max_length=500, description="URL de notification personnalisée")
+    return_url: Optional[str] = Field(None, max_length=500, description="URL de retour personnalisée")
 
 class PaiementUpdate(BaseModel):
-    dossier_id: Optional[int] = None
-    type_paiement: Optional[TypePaiementEnum] = None
-    montant: Optional[float] = None
-    devise: Optional[DeviseEnum] = None
-    statut: Optional[StatutPaiementEnum] = None
-    methode: Optional[MethodePaiementEnum] = None
-    reference_externe: Optional[str] = Field(None, max_length=120)
-    message: Optional[str] = Field(None, max_length=255)
-    paye_le: Optional[datetime] = None
-    date_echeance: Optional[date] = None
+    """Schéma pour la mise à jour d'un paiement - Champs limités pour la sécurité"""
+    description: Optional[str] = Field(None, max_length=500)
+    metadata_paiement: Optional[str] = Field(None, max_length=500)
 
-class PaiementLight(BaseModel):
+class PaiementResponse(BaseModel):
+    """Schéma pour la réponse d'un paiement - Tous les champs système inclus"""
     id: int
-    type_paiement: TypePaiementEnum
-    montant: float
-    statut: StatutPaiementEnum
+    transaction_id: str
+    utilisateur_id: int
+    session_id: int
+    montant: int
+    devise: str
+    description: str
+    type_paiement: str
+    statut: str
+    payment_method: Optional[str] = None
+    operator_id: Optional[str] = None
+    payment_date: Optional[datetime] = None
+    fund_availability_date: Optional[datetime] = None
+    metadata_paiement: Optional[str] = None
+    notify_url: str
+    return_url: str
+    payment_url: Optional[str] = None
+    payment_token: Optional[str] = None
+    error_message: Optional[str] = None
+    date_creation: datetime
+    date_modification: datetime
+    
+    class Config:
+        from_attributes = True
 
-class PaiementResponse(PaiementLight):
-    dossier_id: int
-    devise: DeviseEnum
-    methode: Optional[MethodePaiementEnum]
-    reference_externe: Optional[str]
-    message: Optional[str]
-    paye_le: Optional[datetime]
-    date_echeance: Optional[date]
-    created_at: datetime
-    updated_at: datetime
-    dossier: DossierCandidatureLight
+# Système de queue Redis optimisé
+class PaiementQueueCreate(BaseModel):
+    """Schéma pour la création d'une entrée de queue"""
+    transaction_id: str
+    prochaine_verification: datetime
+    max_tentatives: int = 20  # 20 tentatives * 15 secondes = 5 minutes
+
+class PaiementQueueUpdate(BaseModel):
+    """Schéma pour la mise à jour d'une entrée de queue"""
+    statut: Optional[str] = None
+    tentatives: Optional[int] = None
+    prochaine_verification: Optional[datetime] = None
+
+class PaiementQueueResponse(BaseModel):
+    """Schéma pour la réponse d'une entrée de queue"""
+    id: int
+    transaction_id: str
+    statut: str
+    tentatives: int
+    prochaine_verification: datetime
+    date_creation: datetime
+    date_modification: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Statistiques de paiement
+class PaiementStats(BaseModel):
+    """Statistiques des paiements"""
+    total_paiements: int
+    paiements_acceptes: int
+    paiements_refuses: int
+    paiements_en_attente: int
+    paiements_echec: int
+    montant_total: int
+    devise: str
+
+# Anciens schémas pour compatibilité (à supprimer progressivement)
+class PaiementCinetPayCreate(PaiementCreate):
+    """Alias pour compatibilité - Utilise PaiementCreate"""
+    pass
+
+class PaiementCinetPayUpdate(PaiementUpdate):
+    """Alias pour compatibilité - Utilise PaiementUpdate"""
+    pass
+
+class PaiementCinetPayResponse(PaiementResponse):
+    """Alias pour compatibilité - Utilise PaiementResponse"""
+    pass

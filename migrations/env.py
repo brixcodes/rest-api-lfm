@@ -22,7 +22,7 @@ if config.config_file_name is not None:
 from src.util.db.database import Base
 from src.api.model import (
     Adresse, Utilisateur, CentreFormation, Formation, SessionFormation,
-    Module, Ressource, DossierCandidature, PieceJointe, Reclamation, Paiement,
+    Module, Ressource, DossierCandidature, PieceJointe, Reclamation,
     InformationDescriptive,
     Evaluation, QuestionEvaluation, ResultatEvaluation, ReponseCandidat, Certificat,
 )

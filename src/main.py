@@ -59,8 +59,8 @@ api_router = APIRouter()
 
 # Include all sub-routers from the updated router.py
 api_router.include_router(fichiers)
-api_router.include_router(adresses)
 api_router.include_router(utilisateurs)
+api_router.include_router(adresses)
 api_router.include_router(centres_formations)
 api_router.include_router(formations)
 api_router.include_router(informations_descriptives)
@@ -72,10 +72,10 @@ api_router.include_router(pieces_jointes)
 api_router.include_router(reclamations)
 api_router.include_router(paiements)
 api_router.include_router(evaluations)
-api_router.include_router(resultats_evaluations)
-api_router.include_router(certificats)
 api_router.include_router(questions_evaluation)
 api_router.include_router(reponses_candidats)
+api_router.include_router(resultats_evaluations)
+api_router.include_router(certificats)
 
 # Include the main router with a global prefix
 app.include_router(api_router, prefix="/api/v1")

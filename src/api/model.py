@@ -222,13 +222,14 @@ class DossierCandidature(Base, TimestampMixin):
 
     id = Column(Integer, primary_key=True)
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id", ondelete="CASCADE"), nullable=False)
-    formation_id = Column(Integer, ForeignKey("formations.id", ondelete="CASCADE"), nullable=False)
+    formation_id = Column(Integer, ForeignKey("formations.id", ondelete="CASCADE"), nullable=True)
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True)
 
     numero_candidature = Column(String(50), unique=True, index=True, nullable=True)
     statut = Column(Enum(StatutCandidatureEnum), default=StatutCandidatureEnum.RECUE, nullable=False)
-    date_soumission = Column(DateTime(timezone=True), nullable=True)  # Ajouté: Traçabilité
+    date_soumission = Column(DateTime(timezone=True), nullable=False)  # Modifié: Obligatoire et automatique
     motif_refus = Column(Text, nullable=True)  # Ajouté: Pour statut REFUSE
+    objet = Column(Text, nullable=True)  # Ajouté: Objet de la candidature
 
     frais_inscription_montant = Column(Numeric(12, 2), nullable=True)  # Surchargable par rapport à Formation
     frais_formation_montant = Column(Numeric(12, 2), nullable=True)
@@ -239,7 +240,6 @@ class DossierCandidature(Base, TimestampMixin):
     session = relationship("SessionFormation", back_populates="dossiers")
 
     reclamations = relationship("Reclamation", back_populates="dossier", cascade="all, delete-orphan")
-    paiements = relationship("Paiement", back_populates="dossier", cascade="all, delete-orphan")
     pieces_jointes = relationship("PieceJointe", back_populates="dossier", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -251,18 +251,24 @@ class DossierCandidature(Base, TimestampMixin):
     # Propriétés métiers (Optimisé: Utilise sum() avec filter pour performance)
     @property
     def total_paye(self) -> float:
-        return sum(float(p.montant) for p in self.paiements if p.statut == StatutPaiementEnum.SUCCES)
+        # Utiliser les paiements CinetPay au lieu des paiements obsolètes
+        return sum(float(p.montant) for p in self.session.paiements_cinetpay 
+                  if p.utilisateur_id == self.utilisateur_id and p.statut == "ACCEPTED")
 
     @property
     def reste_a_payer_inscription(self) -> float:
         attendu = float(self.frais_inscription_montant or 0)
-        paye = sum(float(p.montant) for p in self.paiements if p.type_paiement == TypePaiementEnum.INSCRIPTION and p.statut == StatutPaiementEnum.SUCCES)
+        # Utiliser les paiements CinetPay pour l'inscription
+        paye = sum(float(p.montant) for p in self.session.paiements_cinetpay 
+                  if p.utilisateur_id == self.utilisateur_id and p.type_paiement == "INSCRIPTION" and p.statut == "ACCEPTED")
         return max(attendu - paye, 0.0)
 
     @property
     def reste_a_payer_formation(self) -> float:
         attendu = float(self.frais_formation_montant or 0)
-        paye = sum(float(p.montant) for p in self.paiements if p.type_paiement == TypePaiementEnum.FORMATION and p.statut == StatutPaiementEnum.SUCCES)
+        # Utiliser les paiements CinetPay pour la formation
+        paye = sum(float(p.montant) for p in self.session.paiements_cinetpay 
+                  if p.utilisateur_id == self.utilisateur_id and p.type_paiement == "FORMATION" and p.statut == "ACCEPTED")
         return max(attendu - paye, 0.0)
 
 
@@ -289,7 +295,7 @@ class Reclamation(Base, TimestampMixin):
     __tablename__ = "reclamations"
 
     id = Column(Integer, primary_key=True)
-    dossier_id = Column(Integer, ForeignKey("dossiers.id", ondelete="CASCADE"), nullable=False)
+    dossier_id = Column(Integer, ForeignKey("dossiers.id", ondelete="CASCADE"), nullable=True)
     auteur_id = Column(Integer, ForeignKey("utilisateurs.id", ondelete="CASCADE"), nullable=False)
 
     numero_reclamation = Column(String(50), unique=True, index=True, nullable=True)
@@ -307,30 +313,8 @@ class Reclamation(Base, TimestampMixin):
 
 
 # ──────────────────────────────────────────────────────────────
-# PAIEMENTS (Optimisé: Ajout de date_echeance, index sur reference_externe)
+# SYSTÈME D'ÉVALUATION ET DE CERTIFICATION
 # ──────────────────────────────────────────────────────────────
-class Paiement(Base, TimestampMixin):
-    __tablename__ = "paiements"
-
-    id = Column(Integer, primary_key=True)
-    dossier_id = Column(Integer, ForeignKey("dossiers.id", ondelete="CASCADE"), nullable=False)
-
-    type_paiement = Column(Enum(TypePaiementEnum), nullable=False)
-    montant = Column(Numeric(12, 2), nullable=False)
-    devise = Column(Enum(DeviseEnum), nullable=False)
-
-    statut = Column(Enum(StatutPaiementEnum), default=StatutPaiementEnum.PENDING, nullable=False)
-    methode = Column(Enum(MethodePaiementEnum), nullable=True)
-    reference_externe = Column(String(120), index=True, nullable=True)
-    message = Column(String(255), nullable=True)
-    paye_le = Column(DateTime(timezone=True), nullable=True)
-    date_echeance = Column(Date, nullable=True)  # Ajouté: Pour rappels
-
-    dossier = relationship("DossierCandidature", back_populates="paiements")
-
-    __table_args__ = (
-        Index("ix_paiement_type_statut", "type_paiement", "statut"),
-    )
 
 
 # ──────────────────────────────────────────────────────────────
@@ -515,3 +499,55 @@ Utilisateur.resultats_evaluations = relationship("ResultatEvaluation", foreign_k
 
 # Ajouter la relation certificats à Utilisateur
 Utilisateur.certificats = relationship("Certificat", back_populates="candidat", cascade="all, delete-orphan")
+
+# Ajouter la relation paiements_cinetpay à Utilisateur
+Utilisateur.paiements_cinetpay = relationship("PaiementCinetPay", back_populates="utilisateur", cascade="all, delete-orphan")
+
+# Ajouter la relation paiements_cinetpay à SessionFormation
+SessionFormation.paiements_cinetpay = relationship("PaiementCinetPay", back_populates="session", cascade="all, delete-orphan")
+
+class PaiementCinetPay(Base):
+    """Modèle pour les paiements CinetPay"""
+    __tablename__ = "paiements_cinetpay"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_id = Column(String, unique=True, index=True, nullable=False)
+    utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    montant = Column(Integer, nullable=False)  # Montant en centimes
+
+    devise = Column(String(3), nullable=False, default="XAF")  # Changé de XOF à XAF
+    description = Column(String(500), nullable=False)
+    type_paiement = Column(String(50), nullable=False, default="FORMATION")  # Ajouté: Type de paiement
+    statut = Column(String(50), nullable=False, default="EN_ATTENTE")
+    payment_method = Column(String(50), nullable=True)
+    operator_id = Column(String(100), nullable=True)
+    payment_date = Column(DateTime, nullable=True)
+    fund_availability_date = Column(DateTime, nullable=True)
+    metadata_paiement = Column(String(500), nullable=True)
+    notify_url = Column(String(500), nullable=False)
+    return_url = Column(String(500), nullable=False)
+    payment_url = Column(String(500), nullable=True)
+    payment_token = Column(String(500), nullable=True)
+    error_message = Column(String(500), nullable=True)
+    date_creation = Column(DateTime, default=datetime.utcnow)
+    date_modification = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relations
+    utilisateur = relationship("Utilisateur", back_populates="paiements_cinetpay")
+    session = relationship("SessionFormation", back_populates="paiements_cinetpay")
+
+class PaiementQueue(Base):
+    """Modèle pour la queue des paiements en arrière-plan"""
+    __tablename__ = "paiements_queue"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_id = Column(String, ForeignKey("paiements_cinetpay.transaction_id"), nullable=False)
+    statut = Column(String(50), nullable=False, default="EN_ATTENTE")
+    tentatives = Column(Integer, default=0)
+    prochaine_verification = Column(DateTime, nullable=False)
+    date_creation = Column(DateTime, default=datetime.utcnow)
+    date_modification = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relations
+    paiement = relationship("PaiementCinetPay", foreign_keys=[transaction_id])
